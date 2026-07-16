@@ -15,7 +15,7 @@ export function Navbar() {
   const navLinks = isAuthenticated
     ? [
         { href: "/dashboard", label: "Dashboard" },
-        { href: "/profile", label: "Profile" },
+        { href: "/dashboard/settings", label: "Settings" },
       ]
     : [];
 

@@ -67,7 +67,7 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden px-4 pb-24 pt-32 sm:px-6 lg:px-8">
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-[500px] w-[500px] animate-pulse-glow rounded-full bg-indigo-500/10 blur-3xl" />
+          <div className="h-125 w-125 animate-pulse-glow rounded-full bg-indigo-500/10 blur-3xl" />
         </div>
 
         <div className="relative mx-auto max-w-4xl text-center">
@@ -78,7 +78,7 @@ export default function HomePage() {
 
           <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-6xl lg:text-7xl">
             Review code like a{" "}
-            <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
+            <span className="bg-linear-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">
               senior developer
             </span>
           </h1>
@@ -180,7 +180,7 @@ export default function HomePage() {
           <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {steps.map((item) => (
               <div key={item.step} className="relative text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 font-mono text-lg font-bold text-indigo-400 ring-1 ring-indigo-500/20">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500/20 to-cyan-500/20 font-mono text-lg font-bold text-indigo-400 ring-1 ring-indigo-500/20">
                   {item.step}
                 </div>
                 <h3 className="font-semibold">{item.title}</h3>
