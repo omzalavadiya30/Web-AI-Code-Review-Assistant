@@ -133,7 +133,7 @@ export default function SettingsPage() {
       </section>
 
       <section className="glass-card flex flex-col gap-4 rounded-2xl p-6 sm:flex-row sm:items-center">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-500 text-2xl font-bold text-white">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-indigo-500 to-cyan-500 text-2xl font-bold text-white">
           {user?.name?.charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0">

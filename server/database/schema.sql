@@ -34,13 +34,38 @@ CREATE TABLE IF NOT EXISTS reviews (
     project_id UUID REFERENCES projects (id) ON DELETE SET NULL,
     user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     review_type VARCHAR(50) NOT NULL CHECK (review_type IN ('snippet', 'file', 'github')),
+    status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'queued', 'completed', 'failed')),
     overall_score DECIMAL(5, 2),
     summary TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE reviews
+    ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'queued', 'completed', 'failed'));
+
 CREATE INDEX IF NOT EXISTS idx_reviews_user_id ON reviews (user_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_project_id ON reviews (project_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews (status);
+
+-- Review Sources
+CREATE TABLE IF NOT EXISTS review_sources (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_id UUID NOT NULL REFERENCES reviews (id) ON DELETE CASCADE,
+    source_type VARCHAR(50) NOT NULL CHECK (source_type IN ('snippet', 'file', 'github')),
+    title VARCHAR(255) NOT NULL,
+    language VARCHAR(80),
+    file_name VARCHAR(255),
+    branch_name VARCHAR(255),
+    content TEXT NOT NULL,
+    line_count INTEGER NOT NULL DEFAULT 0,
+    character_count INTEGER NOT NULL DEFAULT 0,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_review_sources_review_id ON review_sources (review_id);
+CREATE INDEX IF NOT EXISTS idx_review_sources_source_type ON review_sources (source_type);
 
 -- Review Findings
 CREATE TABLE IF NOT EXISTS review_findings (

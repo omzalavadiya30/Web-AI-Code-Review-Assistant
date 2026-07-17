@@ -1,7 +1,10 @@
-import express from 'express'
+import express from "express";
 import authRoutes from "./auth.routes.js";
+import reviewRoutes from "./review.routes.js";
 
-const router= express.Router()
+const router = express.Router();
 
-router.use("/auth", authRoutes)
-export default router
+router.use("/auth", authRoutes);
+router.use("/reviews", reviewRoutes);
+
+export default router;

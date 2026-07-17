@@ -27,14 +27,7 @@ const quickActions = [
     description: "Upload source files for batch analysis",
     color: "text-cyan-400 bg-cyan-500/10 ring-cyan-500/20",
     href: "/dashboard/new",
-  },
-  {
-    icon: GitBranch,
-    title: "GitHub Repository",
-    description: "Analyze a public GitHub repo",
-    color: "text-violet-400 bg-violet-500/10 ring-violet-500/20",
-    href: "/dashboard/new",
-  },
+  }
 ];
 
 const stats = [
@@ -94,7 +87,7 @@ export default function DashboardPage() {
             <Link
               key={action.title}
               href={action.href}
-              className="glass-card group rounded-2xl p-6 transition-all hover:border-indigo-500/30 hover:bg-white/[0.06]"
+              className="glass-card group rounded-2xl p-6 transition-all hover:border-indigo-500/30 hover:bg-white/6"
             >
               <div
                 className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl ring-1 ${action.color}`}
@@ -115,11 +108,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 3 Active - Dashboard layout</h3>
+              <h3 className="font-semibold">Day 4 Active - Code upload storage</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Navigation and routing are now organized under the dashboard shell.
-                Review submission and history pages are ready for the next backend
-                integration step.
+                Snippets and direct source file uploads now save as review drafts
+                with source metadata. GitHub repository fetching remains out of scope.
               </p>
             </div>
           </div>
