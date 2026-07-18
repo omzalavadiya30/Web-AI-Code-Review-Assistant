@@ -50,6 +50,7 @@ export interface CreateSnippetReviewPayload {
   language: string;
   fileName?: string;
   branch?: string;
+  projectId?: string;
   code: string;
   focusAreas: string[];
 }
@@ -73,6 +74,7 @@ export interface CreateFileReviewPayload {
   title: string;
   language?: string;
   branch?: string;
+  projectId?: string;
   focusAreas: string[];
   files: UploadFilePayload[];
 }

@@ -7,7 +7,9 @@ export const SUPABASE_URL = process.env.SUPABASE_URL
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 export const JWT_SECRET = process.env.JWT_SECRET
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d"
-export const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+export const AI_REVIEW_PROVIDER = process.env.AI_REVIEW_PROVIDER || "gemini"
+export const GEMINI_API_KEY = process.env.GEMINI_API_KEY
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash"
 
 export const HTTP_STATUS = {
     OK: 200,
@@ -25,5 +27,16 @@ export const HTTP_STATUS = {
 };
 
 
-const config = { PORT, NODE_ENV, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, JWT_SECRET, JWT_EXPIRES_IN, OPENAI_API_KEY, HTTP_STATUS }
+const config = {
+    PORT,
+    NODE_ENV,
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    JWT_SECRET,
+    JWT_EXPIRES_IN,
+    AI_REVIEW_PROVIDER,
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    HTTP_STATUS,
+}
 export default config

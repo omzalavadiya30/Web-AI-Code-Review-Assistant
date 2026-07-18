@@ -6,13 +6,16 @@ import {
   ArrowRight,
   CheckCircle2,
   Code2,
+  FolderKanban,
   History,
   Sparkles,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
+import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
+import type { Project } from "@/types/project";
 import type { ReviewListItem } from "@/types/review";
 
 const quickActions = [
@@ -29,22 +32,39 @@ const quickActions = [
     description: "Upload source files for batch analysis",
     color: "text-cyan-400 bg-cyan-500/10 ring-cyan-500/20",
     href: "/dashboard/new",
+  },
+  {
+    icon: FolderKanban,
+    title: "Manage Projects",
+    description: "Group reviews by workspace or repository",
+    color: "text-emerald-400 bg-emerald-500/10 ring-emerald-500/20",
+    href: "/dashboard/projects",
   }
 ];
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [reviews, setReviews] = useState<ReviewListItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
     let mounted = true;
 
     const loadReviews = async () => {
       try {
-        const response = await reviewApi.list();
-        if (mounted) setReviews(response.data || []);
+        const [reviewsResponse, projectsResponse] = await Promise.all([
+          reviewApi.list(),
+          projectApi.list(),
+        ]);
+        if (mounted) {
+          setReviews(reviewsResponse.data || []);
+          setProjects(projectsResponse.data || []);
+        }
       } catch {
-        if (mounted) setReviews([]);
+        if (mounted) {
+          setReviews([]);
+          setProjects([]);
+        }
       }
     };
 
@@ -66,6 +86,7 @@ export default function DashboardPage() {
         : "-";
 
     return [
+      { label: "Projects", value: projects.length.toString() },
       { label: "Reviews", value: reviews.length.toString() },
       {
         label: "Open Findings",
@@ -79,7 +100,7 @@ export default function DashboardPage() {
         value: reviews[0]?.created_at ? new Date(reviews[0].created_at).toLocaleDateString() : "None",
       },
     ];
-  }, [reviews]);
+  }, [projects.length, reviews]);
 
   return (
     <div className="space-y-8">
@@ -102,7 +123,7 @@ export default function DashboardPage() {
         </Link>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {stats.map((stat) => (
           <div key={stat.label} className="glass-card rounded-2xl p-5">
             <p className="text-sm text-zinc-500">{stat.label}</p>
@@ -149,10 +170,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 7 Active - Results dashboard</h3>
+              <h3 className="font-semibold">Day 8 Active - AI code review</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Static analysis results now roll into score cards, severity breakdowns,
-                analyzer coverage, priority reviews, and structured finding details.
+                Static findings now feed into Gemini for AI-assisted explanations,
+                remediation guidance, and additional code-review recommendations.
               </p>
             </div>
           </div>
@@ -164,7 +185,7 @@ export default function DashboardPage() {
           </div>
           <h3 className="font-semibold">Next milestone</h3>
           <p className="mt-1 text-sm text-zinc-400">
-            Connect analyzer findings to AI review summaries and remediation guidance.
+            Add repository-level review context and richer pull-request style reports.
           </p>
         </div>
       </section>

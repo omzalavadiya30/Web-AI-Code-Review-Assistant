@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -20,7 +20,9 @@ import {
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
+import type { Project } from "@/types/project";
 import type { ReviewFinding, ReviewListItem } from "@/types/review";
 
 const reviewStates = ["All", "Draft", "Completed", "Flagged"] as const;
@@ -111,6 +113,7 @@ const getScoreBarClass = (score: number | null) => {
 
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<ReviewListItem[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activeState, setActiveState] = useState<ReviewState>("All");
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -121,9 +124,13 @@ export default function ReviewsPage() {
 
     const loadReviews = async () => {
       try {
-        const response = await reviewApi.list();
+        const [reviewsResponse, projectsResponse] = await Promise.all([
+          reviewApi.list(),
+          projectApi.list(),
+        ]);
         if (mounted) {
-          setReviews(response.data || []);
+          setReviews(reviewsResponse.data || []);
+          setProjects(projectsResponse.data || []);
           setError("");
         }
       } catch (loadError) {
@@ -141,6 +148,12 @@ export default function ReviewsPage() {
       mounted = false;
     };
   }, []);
+
+  const getProjectName = useCallback(
+    (projectId: string | null) =>
+      projects.find((project) => project.id === projectId)?.project_name || null,
+    [projects]
+  );
 
   const analysisDashboard = useMemo(() => {
     const findingsWithReview = reviews.flatMap((review) =>
@@ -244,6 +257,7 @@ export default function ReviewsPage() {
     return reviews.filter((review) => {
       const source = review.sources[0];
       const reviewTitle = getReviewTitle(review);
+      const projectName = getProjectName(review.project_id);
       const statusMatch =
         activeState === "All" ||
         review.status === activeState.toLowerCase() ||
@@ -258,13 +272,14 @@ export default function ReviewsPage() {
         source?.language,
         source?.file_name,
         source?.branch_name,
+        projectName,
         review.review_type,
         ...(review.findings || []).map((finding) => finding.issue),
       ]
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query));
     });
-  }, [activeState, reviews, search]);
+  }, [activeState, getProjectName, reviews, search]);
 
   const maxSeverityCount = Math.max(
     ...severityOrder.map((severity) => analysisDashboard.severityCounts[severity]),
@@ -282,7 +297,7 @@ export default function ReviewsPage() {
           <p className="text-sm font-medium text-indigo-300">Reviews</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Review history</h1>
           <p className="mt-2 max-w-2xl text-zinc-400">
-            Track submitted snippets, uploaded files, static findings, and analyzer scores.
+            Track submitted snippets, uploaded files, static findings, AI findings, and review scores.
           </p>
         </div>
         <Link href="/dashboard/new">
@@ -318,7 +333,7 @@ export default function ReviewsPage() {
         <div className="glass-card rounded-2xl p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-indigo-300">Static Results</p>
+              <p className="text-sm font-medium text-indigo-300">Review Results</p>
               <h2 className="mt-1 text-lg font-semibold">Severity distribution</h2>
             </div>
             <BarChart3 className="h-5 w-5 text-zinc-500" />
@@ -350,7 +365,7 @@ export default function ReviewsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-indigo-300">Tooling</p>
-              <h2 className="mt-1 text-lg font-semibold">Analyzer coverage</h2>
+              <h2 className="mt-1 text-lg font-semibold">Reviewer coverage</h2>
             </div>
             <Gauge className="h-5 w-5 text-zinc-500" />
           </div>
@@ -374,7 +389,7 @@ export default function ReviewsPage() {
             </div>
           ) : (
             <div className="mt-5 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
-              No static findings have been reported yet.
+              No review findings have been reported yet.
             </div>
           )}
         </div>
@@ -438,7 +453,7 @@ export default function ReviewsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-indigo-300">Findings</p>
-              <h2 className="mt-1 text-lg font-semibold">Recent static findings</h2>
+              <h2 className="mt-1 text-lg font-semibold">Recent review findings</h2>
             </div>
             <FileSearch className="h-5 w-5 text-zinc-500" />
           </div>
@@ -466,7 +481,7 @@ export default function ReviewsPage() {
             </ul>
           ) : (
             <div className="mt-5 rounded-xl bg-emerald-500/10 p-4 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
-              No static findings have been reported yet.
+              No review findings have been reported yet.
             </div>
           )}
         </div>
@@ -515,6 +530,7 @@ export default function ReviewsPage() {
             {filteredReviews.map((review) => {
               const source = review.sources[0];
               const reviewTitle = getReviewTitle(review);
+              const projectName = getProjectName(review.project_id);
               const reviewSeverityCounts = countFindingsBySeverity(review.findings);
               const sortedReviewFindings = sortFindingsBySeverity(review.findings);
               const scorePercentage = review.overall_score ?? 0;
@@ -548,6 +564,7 @@ export default function ReviewsPage() {
                       <p className="mt-1 text-sm text-zinc-500">
                         {[
                           source?.language,
+                          projectName,
                           review.sources.length > 1
                             ? `${review.sources.length} files`
                             : source?.file_name,
@@ -658,7 +675,7 @@ export default function ReviewsPage() {
                       ) : (
                         <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
                           <CheckCircle2 className="h-4 w-4 shrink-0" />
-                          No static findings were reported.
+                          No review findings were reported.
                         </div>
                       )}
 
@@ -679,7 +696,7 @@ export default function ReviewsPage() {
             <FileSearch className="mx-auto h-12 w-12 text-zinc-500" />
             <h2 className="mt-4 text-lg font-semibold">No reviews yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
-              Analyzed snippets and uploaded files will appear here with static findings.
+              Analyzed snippets and uploaded files will appear here with review findings.
             </p>
             <Link href="/dashboard/new" className="mt-6 inline-flex">
               <Button variant="secondary">

@@ -1,7 +1,17 @@
+import { HTTP_STATUS } from "../config/constants.js";
+import * as projectRepository from "../repositories/project.repository.js";
 import * as reviewRepository from "../repositories/review.repository.js";
+import * as aiReviewService from "./ai-review.service.js";
 import * as staticAnalysisService from "./static-analysis.service.js";
+import { AppError } from "../utils/apiHandler.js";
 
 const DEFAULT_LANGUAGE = "Plain text";
+const severityScorePenalty = {
+    critical: 25,
+    high: 15,
+    medium: 8,
+    low: 3,
+};
 const extensionLanguageMap = {
     c: "C",
     cpp: "C++",
@@ -47,6 +57,18 @@ const inferLanguageFromFileName = (fileName) => {
     return extensionLanguageMap[extension] || DEFAULT_LANGUAGE;
 };
 
+const resolveProjectId = async (userId, projectId) => {
+    const normalizedProjectId = projectId?.trim() || null;
+    if (!normalizedProjectId) return null;
+
+    const project = await projectRepository.getProjectByUser(normalizedProjectId, userId);
+    if (!project) {
+        throw new AppError("Project not found", HTTP_STATUS.NOT_FOUND);
+    }
+
+    return project.id;
+};
+
 const mapReview = (review) => ({
     id: review.id,
     project_id: review.project_id,
@@ -84,11 +106,38 @@ const mapReviewFinding = (finding) => ({
     created_at: finding.created_at,
 });
 
-const runStaticAnalysis = async (review, sources) => {
+const calculateOverallScore = (findings) => {
+    const penalty = findings.reduce(
+        (total, finding) => total + (severityScorePenalty[finding.severity] || 0),
+        0
+    );
+    return Math.max(0, 100 - penalty);
+};
+
+const buildReviewSummary = ({ staticAnalysis, aiReview }) => {
+    const parts = [staticAnalysis.summary];
+
+    if (aiReview.summary) {
+        parts.push(`AI review: ${aiReview.summary}`);
+    }
+
+    if (aiReview.notes.length > 0) {
+        parts.push(aiReview.notes.join(" "));
+    }
+
+    return parts.filter(Boolean).join(" ");
+};
+
+const runReviewAnalysis = async (review, sources) => {
     try {
-        const analysis = await staticAnalysisService.analyzeSources(sources);
+        const staticAnalysis = await staticAnalysisService.analyzeSources(sources);
+        const aiReview = await aiReviewService.generateAiReview({
+            sources,
+            staticAnalysis,
+        });
+        const combinedFindings = [...staticAnalysis.findings, ...aiReview.findings];
         const findings = await reviewRepository.createReviewFindings(
-            analysis.findings.map((finding) => ({
+            combinedFindings.map((finding) => ({
                 review_id: review.id,
                 severity: finding.severity,
                 issue: finding.issue,
@@ -100,8 +149,8 @@ const runStaticAnalysis = async (review, sources) => {
         );
         const updatedReview = await reviewRepository.updateReview(review.id, {
             status: "completed",
-            overall_score: analysis.overallScore,
-            summary: analysis.summary,
+            overall_score: calculateOverallScore(combinedFindings),
+            summary: buildReviewSummary({ staticAnalysis, aiReview }),
         });
 
         return {
@@ -109,11 +158,11 @@ const runStaticAnalysis = async (review, sources) => {
             findings,
         };
     } catch (error) {
-        console.error("Static analysis failed", error);
+        console.error("Review analysis failed", error);
         const failedReview = await reviewRepository
             .updateReview(review.id, {
                 status: "failed",
-                summary: `Static analysis failed: ${error.message || "Unknown analyzer error"}`,
+                summary: `Review analysis failed: ${error.message || "Unknown analyzer error"}`,
             })
             .catch(() => review);
 
@@ -131,9 +180,11 @@ export const createSnippetReview = async (userId, payload) => {
     const branchName = payload.branch?.trim() || null;
     const content = payload.code;
     const focusAreas = sanitizeFocusAreas(payload.focusAreas);
+    const projectId = await resolveProjectId(userId, payload.projectId);
 
     const review = await reviewRepository.createReview({
         user_id: userId,
+        project_id: projectId,
         review_type: "snippet",
         status: "queued",
     });
@@ -163,7 +214,7 @@ export const createSnippetReview = async (userId, payload) => {
         throw error;
     }
 
-    const analysis = await runStaticAnalysis(review, [{ ...source, content }]);
+    const analysis = await runReviewAnalysis(review, [{ ...source, content }]);
 
     return {
         review: mapReview(analysis.review),
@@ -177,8 +228,10 @@ export const createFileReview = async (userId, payload) => {
     const fallbackLanguage = payload.language?.trim() || null;
     const branchName = payload.branch?.trim() || null;
     const focusAreas = sanitizeFocusAreas(payload.focusAreas);
+    const projectId = await resolveProjectId(userId, payload.projectId);
     const review = await reviewRepository.createReview({
         user_id: userId,
+        project_id: projectId,
         review_type: "file",
         status: "queued",
     });
@@ -226,7 +279,7 @@ export const createFileReview = async (userId, payload) => {
         ...source,
         content: sourceRecords[index].content,
     }));
-    const analysis = await runStaticAnalysis(review, analysisSources);
+    const analysis = await runReviewAnalysis(review, analysisSources);
 
     return {
         review: mapReview(analysis.review),

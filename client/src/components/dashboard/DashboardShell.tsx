@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Code2,
   FilePlus2,
+  FolderKanban,
   History,
   LayoutDashboard,
   LogOut,
@@ -44,6 +45,12 @@ const navItems: NavItem[] = [
     label: "Reviews",
     description: "Review history",
     icon: History,
+  },
+  {
+    href: "/dashboard/projects",
+    label: "Projects",
+    description: "Workspace grouping",
+    icon: FolderKanban,
   },
   {
     href: "/dashboard/settings",

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertCircle,
   CheckCircle2,
@@ -8,6 +9,7 @@ import {
   Code2,
   FileCode2,
   FileText,
+  FolderKanban,
   GitBranch,
   X,
   Upload,
@@ -15,8 +17,10 @@ import {
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
 import { showApiSuccess } from "@/lib/toast";
+import type { Project } from "@/types/project";
 import type { Review, ReviewFinding, ReviewSource } from "@/types/review";
 
 type ReviewMode = "snippet" | "upload";
@@ -85,13 +89,43 @@ export default function NewReviewPage() {
   const [language, setLanguage] = useState("JavaScript");
   const [fileName, setFileName] = useState("");
   const [branch, setBranch] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [code, setCode] = useState("");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileDraft[]>([]);
   const [selectedFocusAreas, setSelectedFocusAreas] = useState(() => focusAreas.slice(0, 3));
   const [storedReview, setStoredReview] = useState<StoredReviewResult | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const [projectLoadError, setProjectLoadError] = useState("");
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isReadingFiles, setIsReadingFiles] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadProjects = async () => {
+      try {
+        const response = await projectApi.list();
+        if (mounted) {
+          setProjects(response.data || []);
+          setProjectLoadError("");
+        }
+      } catch (error) {
+        if (mounted) {
+          setProjectLoadError(error instanceof Error ? error.message : "Failed to load projects");
+        }
+      } finally {
+        if (mounted) setIsLoadingProjects(false);
+      }
+    };
+
+    loadProjects();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const canSubmit = useMemo(() => {
     if (isSubmitting || isReadingFiles) return false;
@@ -196,6 +230,7 @@ export default function NewReviewPage() {
           language,
           fileName: fileName.trim() || undefined,
           branch: branch.trim() || undefined,
+          projectId: projectId || undefined,
           code,
           focusAreas: selectedFocusAreas,
         });
@@ -215,6 +250,7 @@ export default function NewReviewPage() {
           title: title.trim(),
           language,
           branch: branch.trim() || undefined,
+          projectId: projectId || undefined,
           focusAreas: selectedFocusAreas,
           files: uploadedFiles.map((file) => ({
             fileName: file.fileName,
@@ -243,6 +279,8 @@ export default function NewReviewPage() {
   const storedLineCount =
     storedReview?.sources.reduce((total, source) => total + source.line_count, 0) ?? 0;
   const storedFindingCount = storedReview?.findings.length ?? 0;
+  const selectedProject = projects.find((project) => project.id === projectId);
+  const storedProject = projects.find((project) => project.id === storedReview?.review.project_id);
 
   return (
     <div className="space-y-8">
@@ -250,7 +288,7 @@ export default function NewReviewPage() {
         <p className="text-sm font-medium text-indigo-300">New Review</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Submit code for review</h1>
         <p className="mt-2 max-w-2xl text-zinc-400">
-          Choose a submission source and store the code the review engine will analyze.
+          Choose a submission source and run static checks plus AI-assisted review.
         </p>
       </section>
 
@@ -266,6 +304,7 @@ export default function NewReviewPage() {
       )}
 
       {submitError && <Alert type="error" message={submitError} />}
+      {projectLoadError && <Alert type="error" message={projectLoadError} />}
 
       <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[1fr_22rem]" noValidate>
         <section className="glass-card rounded-2xl p-6">
@@ -306,6 +345,44 @@ export default function NewReviewPage() {
               onChange={(event) => setTitle(event.target.value)}
               icon={<FileCode2 className="h-4 w-4" />}
             />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="review-project" className="block text-sm font-medium text-zinc-300">
+                  Project
+                </label>
+                <Link
+                  href="/dashboard/projects"
+                  className="text-xs font-medium text-indigo-300 hover:text-indigo-200"
+                >
+                  Manage projects
+                </Link>
+              </div>
+              <div className="relative">
+                <select
+                  id="review-project"
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                  disabled={isLoadingProjects}
+                  className="w-full appearance-none rounded-xl border border-white/10 bg-[#111118] px-10 py-3 pr-10 text-sm text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:text-zinc-500"
+                  style={{ colorScheme: "dark" }}
+                >
+                  <option value="" className="bg-[#111118] text-zinc-100">
+                    {isLoadingProjects ? "Loading projects..." : "No project"}
+                  </option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id} className="bg-[#111118] text-zinc-100">
+                      {project.project_name}
+                    </option>
+                  ))}
+                </select>
+                <FolderKanban className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+              </div>
+              {selectedProject?.github_url && (
+                <p className="truncate text-xs text-zinc-500">{selectedProject.github_url}</p>
+              )}
+            </div>
 
             <div className={`grid gap-5 ${mode === "snippet" ? "sm:grid-cols-2" : ""}`}>
               <div className="space-y-2">
@@ -477,7 +554,7 @@ export default function NewReviewPage() {
 
           {storedReview && (
             <section className="glass-card rounded-2xl p-6">
-              <h2 className="font-semibold">Static Analysis</h2>
+              <h2 className="font-semibold">AI-Assisted Review</h2>
               <dl className="mt-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-zinc-500">Sources</dt>
@@ -491,6 +568,12 @@ export default function NewReviewPage() {
                   <dt className="text-zinc-500">Type</dt>
                   <dd className="font-medium capitalize text-zinc-200">
                     {storedReview.review.review_type}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-zinc-500">Project</dt>
+                  <dd className="truncate font-medium text-zinc-200">
+                    {storedProject?.project_name || "No project"}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
@@ -533,7 +616,7 @@ export default function NewReviewPage() {
                 </ul>
               ) : (
                 <p className="mt-5 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
-                  No static findings were reported.
+                  No review findings were reported.
                 </p>
               )}
             </section>

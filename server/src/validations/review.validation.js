@@ -49,6 +49,10 @@ export const createSnippetReviewValidation = [
         .trim()
         .isLength({ max: 120 })
         .withMessage("Branch must be 120 characters or fewer"),
+    body("projectId")
+        .optional({ values: "falsy" })
+        .isUUID()
+        .withMessage("Project must be a valid project id"),
     body("code")
         .isString()
         .withMessage("Code snippet is required")
@@ -97,6 +101,10 @@ export const createFileReviewValidation = [
         .trim()
         .isLength({ max: 120 })
         .withMessage("Branch must be 120 characters or fewer"),
+    body("projectId")
+        .optional({ values: "falsy" })
+        .isUUID()
+        .withMessage("Project must be a valid project id"),
     body("focusAreas")
         .optional()
         .isArray({ max: 10 })
