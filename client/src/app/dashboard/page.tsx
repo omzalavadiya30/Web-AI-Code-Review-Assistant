@@ -149,10 +149,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 6 Active - Static analysis</h3>
+              <h3 className="font-semibold">Day 7 Active - Results dashboard</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Snippets and direct source file uploads now run static analysis and save
-                findings, severity, suggested fixes, and an overall score.
+                Static analysis results now roll into score cards, severity breakdowns,
+                analyzer coverage, priority reviews, and structured finding details.
               </p>
             </div>
           </div>
@@ -164,7 +164,7 @@ export default function DashboardPage() {
           </div>
           <h3 className="font-semibold">Next milestone</h3>
           <p className="mt-1 text-sm text-zinc-400">
-            Connect completed static-analysis results to AI review and explanations.
+            Connect analyzer findings to AI review summaries and remediation guidance.
           </p>
         </div>
       </section>
