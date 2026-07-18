@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { reviewApi } from "@/lib/review-api";
 import { showApiSuccess } from "@/lib/toast";
-import type { Review, ReviewSource } from "@/types/review";
+import type { Review, ReviewFinding, ReviewSource } from "@/types/review";
 
 type ReviewMode = "snippet" | "upload";
 type UploadedFileDraft = {
@@ -33,6 +33,7 @@ type UploadedFileDraft = {
 type StoredReviewResult = {
   review: Review;
   sources: ReviewSource[];
+  findings: ReviewFinding[];
 };
 
 const MAX_UPLOAD_FILES = 8;
@@ -62,6 +63,13 @@ const focusAreas = [
   "Best practices",
 ];
 
+const findingSeverityClasses = {
+  low: "bg-cyan-500/10 text-cyan-200 ring-cyan-500/20",
+  medium: "bg-amber-500/10 text-amber-200 ring-amber-500/20",
+  high: "bg-orange-500/10 text-orange-200 ring-orange-500/20",
+  critical: "bg-red-500/10 text-red-200 ring-red-500/20",
+};
+
 const countLines = (content: string) =>
   content.length === 0 ? 0 : content.split(/\r\n|\r|\n/).length;
 
@@ -78,7 +86,6 @@ export default function NewReviewPage() {
   const [fileName, setFileName] = useState("");
   const [branch, setBranch] = useState("");
   const [code, setCode] = useState("");
-  const [repositoryUrl, setRepositoryUrl] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFileDraft[]>([]);
   const [selectedFocusAreas, setSelectedFocusAreas] = useState(() => focusAreas.slice(0, 3));
   const [storedReview, setStoredReview] = useState<StoredReviewResult | null>(null);
@@ -197,6 +204,7 @@ export default function NewReviewPage() {
           setStoredReview({
             review: response.data.review,
             sources: [response.data.source],
+            findings: response.data.findings,
           });
           showApiSuccess(response.message);
         }
@@ -220,6 +228,7 @@ export default function NewReviewPage() {
           setStoredReview({
             review: response.data.review,
             sources: response.data.sources,
+            findings: response.data.findings,
           });
           showApiSuccess(response.message);
         }
@@ -233,6 +242,7 @@ export default function NewReviewPage() {
 
   const storedLineCount =
     storedReview?.sources.reduce((total, source) => total + source.line_count, 0) ?? 0;
+  const storedFindingCount = storedReview?.findings.length ?? 0;
 
   return (
     <div className="space-y-8">
@@ -249,7 +259,9 @@ export default function NewReviewPage() {
           type="success"
           message={`${storedReview.sources.length} source${
             storedReview.sources.length === 1 ? "" : "s"
-          } stored as review ${storedReview.review.id}. ${storedLineCount} lines saved.`}
+          } analyzed as review ${storedReview.review.id}. ${storedLineCount} lines, ${storedFindingCount} finding${
+            storedFindingCount === 1 ? "" : "s"
+          }.`}
         />
       )}
 
@@ -465,7 +477,7 @@ export default function NewReviewPage() {
 
           {storedReview && (
             <section className="glass-card rounded-2xl p-6">
-              <h2 className="font-semibold">Stored Draft</h2>
+              <h2 className="font-semibold">Static Analysis</h2>
               <dl className="mt-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
                   <dt className="text-zinc-500">Sources</dt>
@@ -482,12 +494,48 @@ export default function NewReviewPage() {
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
+                  <dt className="text-zinc-500">Findings</dt>
+                  <dd className="font-medium text-zinc-200">{storedFindingCount}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="text-zinc-500">Score</dt>
+                  <dd className="font-medium text-zinc-200">
+                    {storedReview.review.overall_score ?? "-"}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
                   <dt className="text-zinc-500">Status</dt>
                   <dd className="font-medium capitalize text-zinc-200">
                     {storedReview.review.status}
                   </dd>
                 </div>
               </dl>
+
+              {storedReview.findings.length > 0 ? (
+                <ul className="mt-5 space-y-3">
+                  {storedReview.findings.slice(0, 3).map((finding) => (
+                    <li key={finding.id} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ${
+                            findingSeverityClasses[finding.severity]
+                          }`}
+                        >
+                          {finding.severity}
+                        </span>
+                        {finding.line_number && (
+                          <span className="text-xs text-zinc-500">Line {finding.line_number}</span>
+                        )}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-sm text-zinc-300">{finding.issue}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-5 rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
+                  No static findings were reported.
+                </p>
+              )}
             </section>
           )}
 

@@ -1,17 +1,19 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   CheckCircle2,
   Code2,
-  GitBranch,
   History,
   Sparkles,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
+import { reviewApi } from "@/lib/review-api";
+import type { ReviewListItem } from "@/types/review";
 
 const quickActions = [
   {
@@ -30,15 +32,54 @@ const quickActions = [
   }
 ];
 
-const stats = [
-  { label: "Reviews", value: "0" },
-  { label: "Open Findings", value: "0" },
-  { label: "Avg. Score", value: "-" },
-  { label: "Last Review", value: "None" },
-];
-
 export default function DashboardPage() {
   const { user } = useAuth();
+  const [reviews, setReviews] = useState<ReviewListItem[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadReviews = async () => {
+      try {
+        const response = await reviewApi.list();
+        if (mounted) setReviews(response.data || []);
+      } catch {
+        if (mounted) setReviews([]);
+      }
+    };
+
+    loadReviews();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const stats = useMemo(() => {
+    const scoredReviews = reviews.filter((review) => review.overall_score !== null);
+    const averageScore =
+      scoredReviews.length > 0
+        ? Math.round(
+            scoredReviews.reduce((total, review) => total + (review.overall_score || 0), 0) /
+              scoredReviews.length
+          ).toString()
+        : "-";
+
+    return [
+      { label: "Reviews", value: reviews.length.toString() },
+      {
+        label: "Open Findings",
+        value: reviews
+          .reduce((total, review) => total + (review.findings?.length || 0), 0)
+          .toString(),
+      },
+      { label: "Avg. Score", value: averageScore },
+      {
+        label: "Last Review",
+        value: reviews[0]?.created_at ? new Date(reviews[0].created_at).toLocaleDateString() : "None",
+      },
+    ];
+  }, [reviews]);
 
   return (
     <div className="space-y-8">
@@ -108,10 +149,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 4 Active - Code upload storage</h3>
+              <h3 className="font-semibold">Day 6 Active - Static analysis</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Snippets and direct source file uploads now save as review drafts
-                with source metadata. GitHub repository fetching remains out of scope.
+                Snippets and direct source file uploads now run static analysis and save
+                findings, severity, suggested fixes, and an overall score.
               </p>
             </div>
           </div>
@@ -123,7 +164,7 @@ export default function DashboardPage() {
           </div>
           <h3 className="font-semibold">Next milestone</h3>
           <p className="mt-1 text-sm text-zinc-400">
-            Connect review creation to static analysis and AI feedback.
+            Connect completed static-analysis results to AI review and explanations.
           </p>
         </div>
       </section>

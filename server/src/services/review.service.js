@@ -1,4 +1,5 @@
 import * as reviewRepository from "../repositories/review.repository.js";
+import * as staticAnalysisService from "./static-analysis.service.js";
 
 const DEFAULT_LANGUAGE = "Plain text";
 const extensionLanguageMap = {
@@ -52,7 +53,7 @@ const mapReview = (review) => ({
     user_id: review.user_id,
     review_type: review.review_type,
     status: review.status,
-    overall_score: review.overall_score,
+    overall_score: review.overall_score === null ? null : Number(review.overall_score),
     summary: review.summary,
     created_at: review.created_at,
 });
@@ -71,6 +72,58 @@ const mapReviewSource = (source) => ({
     created_at: source.created_at,
 });
 
+const mapReviewFinding = (finding) => ({
+    id: finding.id,
+    review_id: finding.review_id,
+    severity: finding.severity,
+    issue: finding.issue,
+    explanation: finding.explanation,
+    suggested_fix: finding.suggested_fix,
+    file_name: finding.file_name,
+    line_number: finding.line_number,
+    created_at: finding.created_at,
+});
+
+const runStaticAnalysis = async (review, sources) => {
+    try {
+        const analysis = await staticAnalysisService.analyzeSources(sources);
+        const findings = await reviewRepository.createReviewFindings(
+            analysis.findings.map((finding) => ({
+                review_id: review.id,
+                severity: finding.severity,
+                issue: finding.issue,
+                explanation: finding.explanation,
+                suggested_fix: finding.suggested_fix,
+                file_name: finding.file_name,
+                line_number: finding.line_number,
+            }))
+        );
+        const updatedReview = await reviewRepository.updateReview(review.id, {
+            status: "completed",
+            overall_score: analysis.overallScore,
+            summary: analysis.summary,
+        });
+
+        return {
+            review: updatedReview,
+            findings,
+        };
+    } catch (error) {
+        console.error("Static analysis failed", error);
+        const failedReview = await reviewRepository
+            .updateReview(review.id, {
+                status: "failed",
+                summary: `Static analysis failed: ${error.message || "Unknown analyzer error"}`,
+            })
+            .catch(() => review);
+
+        return {
+            review: failedReview,
+            findings: [],
+        };
+    }
+};
+
 export const createSnippetReview = async (userId, payload) => {
     const title = payload.title.trim();
     const language = payload.language?.trim() || DEFAULT_LANGUAGE;
@@ -82,11 +135,13 @@ export const createSnippetReview = async (userId, payload) => {
     const review = await reviewRepository.createReview({
         user_id: userId,
         review_type: "snippet",
-        status: "draft",
+        status: "queued",
     });
 
+    let source;
+
     try {
-        const source = await reviewRepository.createReviewSource({
+        source = await reviewRepository.createReviewSource({
             review_id: review.id,
             source_type: "snippet",
             title,
@@ -99,10 +154,6 @@ export const createSnippetReview = async (userId, payload) => {
             metadata: { focusAreas },
         });
 
-        return {
-            review: mapReview(review),
-            source: mapReviewSource(source),
-        };
     } catch (error) {
         try {
             await reviewRepository.deleteReview(review.id);
@@ -111,6 +162,14 @@ export const createSnippetReview = async (userId, payload) => {
         }
         throw error;
     }
+
+    const analysis = await runStaticAnalysis(review, [{ ...source, content }]);
+
+    return {
+        review: mapReview(analysis.review),
+        source: mapReviewSource(source),
+        findings: analysis.findings.map(mapReviewFinding),
+    };
 };
 
 export const createFileReview = async (userId, payload) => {
@@ -121,41 +180,39 @@ export const createFileReview = async (userId, payload) => {
     const review = await reviewRepository.createReview({
         user_id: userId,
         review_type: "file",
-        status: "draft",
+        status: "queued",
     });
 
+    let sourceRecords;
+    let sources;
+
     try {
-        const sources = await reviewRepository.createReviewSources(
-            payload.files.map((file) => {
-                const fileName = file.fileName.trim();
-                const content = file.content;
-                const language =
-                    file.language?.trim() || fallbackLanguage || inferLanguageFromFileName(fileName);
+        sourceRecords = payload.files.map((file) => {
+            const fileName = file.fileName.trim();
+            const content = file.content;
+            const language =
+                file.language?.trim() || fallbackLanguage || inferLanguageFromFileName(fileName);
 
-                return {
-                    review_id: review.id,
-                    source_type: "file",
-                    title: file.title?.trim() || fileName,
-                    language,
-                    file_name: fileName,
-                    branch_name: branchName,
-                    content,
-                    line_count: getLineCount(content),
-                    character_count: content.length,
-                    metadata: {
-                        reviewTitle: title,
-                        focusAreas,
-                        originalSize: file.size ?? null,
-                        mimeType: file.type || null,
-                    },
-                };
-            })
-        );
+            return {
+                review_id: review.id,
+                source_type: "file",
+                title: file.title?.trim() || fileName,
+                language,
+                file_name: fileName,
+                branch_name: branchName,
+                content,
+                line_count: getLineCount(content),
+                character_count: content.length,
+                metadata: {
+                    reviewTitle: title,
+                    focusAreas,
+                    originalSize: file.size ?? null,
+                    mimeType: file.type || null,
+                },
+            };
+        });
 
-        return {
-            review: mapReview(review),
-            sources: sources.map(mapReviewSource),
-        };
+        sources = await reviewRepository.createReviewSources(sourceRecords);
     } catch (error) {
         try {
             await reviewRepository.deleteReview(review.id);
@@ -164,6 +221,18 @@ export const createFileReview = async (userId, payload) => {
         }
         throw error;
     }
+
+    const analysisSources = sources.map((source, index) => ({
+        ...source,
+        content: sourceRecords[index].content,
+    }));
+    const analysis = await runStaticAnalysis(review, analysisSources);
+
+    return {
+        review: mapReview(analysis.review),
+        sources: sources.map(mapReviewSource),
+        findings: analysis.findings.map(mapReviewFinding),
+    };
 };
 
 export const listReviews = async (userId) => {
@@ -172,5 +241,6 @@ export const listReviews = async (userId) => {
     return reviews.map((review) => ({
         ...mapReview(review),
         sources: (review.review_sources || []).map(mapReviewSource),
+        findings: (review.review_findings || []).map(mapReviewFinding),
     }));
 };

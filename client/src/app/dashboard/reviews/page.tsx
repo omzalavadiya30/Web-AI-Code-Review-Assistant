@@ -27,6 +27,13 @@ const formatStatus = (status: ReviewListItem["status"]) =>
 const getReviewTitle = (review: ReviewListItem) =>
   review.sources[0]?.metadata?.reviewTitle || review.sources[0]?.title || "Untitled review";
 
+const findingSeverityClasses = {
+  low: "bg-cyan-500/10 text-cyan-200 ring-cyan-500/20",
+  medium: "bg-amber-500/10 text-amber-200 ring-amber-500/20",
+  high: "bg-orange-500/10 text-orange-200 ring-orange-500/20",
+  critical: "bg-red-500/10 text-red-200 ring-red-500/20",
+};
+
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<ReviewListItem[]>([]);
   const [activeState, setActiveState] = useState<ReviewState>("All");
@@ -67,8 +74,10 @@ export default function ReviewsPage() {
         value: reviews.filter((review) => review.status === "completed").length.toString(),
       },
       {
-        label: "Drafts",
-        value: reviews.filter((review) => review.status === "draft").length.toString(),
+        label: "Findings",
+        value: reviews
+          .reduce((total, review) => total + (review.findings?.length || 0), 0)
+          .toString(),
       },
       {
         label: "Flagged",
@@ -99,6 +108,7 @@ export default function ReviewsPage() {
         source?.file_name,
         source?.branch_name,
         review.review_type,
+        ...(review.findings || []).map((finding) => finding.issue),
       ]
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query));
@@ -112,7 +122,7 @@ export default function ReviewsPage() {
           <p className="text-sm font-medium text-indigo-300">Reviews</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Review history</h1>
           <p className="mt-2 max-w-2xl text-zinc-400">
-            Track submitted review drafts and stored code snippets from one route.
+            Track submitted snippets, uploaded files, static findings, and analyzer scores.
           </p>
         </div>
         <Link href="/dashboard/new">
@@ -217,15 +227,21 @@ export default function ReviewsPage() {
                       </p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:min-w-80">
+                    <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:min-w-104">
                       <div className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
                         <p className="text-xs text-zinc-500">Lines</p>
                         <p className="mt-1 font-semibold text-zinc-100">{sourceTotals.lines}</p>
                       </div>
                       <div className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
-                        <p className="text-xs text-zinc-500">Characters</p>
+                        <p className="text-xs text-zinc-500">Findings</p>
                         <p className="mt-1 font-semibold text-zinc-100">
-                          {sourceTotals.characters}
+                          {review.findings?.length || 0}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
+                        <p className="text-xs text-zinc-500">Score</p>
+                        <p className="mt-1 font-semibold text-zinc-100">
+                          {review.overall_score ?? "-"}
                         </p>
                       </div>
                       <div className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
@@ -237,6 +253,29 @@ export default function ReviewsPage() {
                       </div>
                     </div>
                   </div>
+
+                  {review.findings && review.findings.length > 0 && (
+                    <ul className="mt-4 grid gap-2 lg:grid-cols-2">
+                      {review.findings.slice(0, 2).map((finding) => (
+                        <li key={finding.id} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ring-1 ${
+                                findingSeverityClasses[finding.severity]
+                              }`}
+                            >
+                              {finding.severity}
+                            </span>
+                            <span className="truncate text-xs text-zinc-500">
+                              {finding.file_name || source?.file_name || "source"}
+                              {finding.line_number ? `:${finding.line_number}` : ""}
+                            </span>
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-sm text-zinc-300">{finding.issue}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </article>
               );
             })}
@@ -246,7 +285,7 @@ export default function ReviewsPage() {
             <FileSearch className="mx-auto h-12 w-12 text-zinc-500" />
             <h2 className="mt-4 text-lg font-semibold">No reviews yet</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
-              Stored snippet drafts will appear here with source metadata and status.
+              Analyzed snippets and uploaded files will appear here with static findings.
             </p>
             <Link href="/dashboard/new" className="mt-6 inline-flex">
               <Button variant="secondary">
