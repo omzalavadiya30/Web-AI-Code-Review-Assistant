@@ -17,6 +17,7 @@ import {
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { CodeSnippetEditor } from "@/components/review/CodeSnippetEditor";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
 import { showApiSuccess } from "@/lib/toast";
@@ -288,7 +289,7 @@ export default function NewReviewPage() {
         <p className="text-sm font-medium text-indigo-300">New Review</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">Submit code for review</h1>
         <p className="mt-2 max-w-2xl text-zinc-400">
-          Choose a submission source and run static checks plus AI-assisted review.
+          Choose a submission source and run static checks, complexity analysis, code-smell reporting, and AI-assisted review.
         </p>
       </section>
 
@@ -429,18 +430,13 @@ export default function NewReviewPage() {
             />
 
             {mode === "snippet" && (
-              <div className="space-y-2">
-                <label htmlFor="code-snippet" className="block text-sm font-medium text-zinc-300">
-                  Code Snippet
-                </label>
-                <textarea
-                  id="code-snippet"
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                  placeholder="Paste code here..."
-                  className="min-h-72 w-full resize-y rounded-xl border border-white/10 bg-[#0d0d14] px-4 py-3 font-mono text-sm text-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                />
-              </div>
+              <CodeSnippetEditor
+                id="code-snippet"
+                value={code}
+                language={language}
+                fileName={fileName}
+                onChange={setCode}
+              />
             )}
 
             {mode === "upload" && (

@@ -170,10 +170,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 8 Active - AI code review</h3>
+              <h3 className="font-semibold">Day 9 Active - quality analysis</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Static findings now feed into Gemini for AI-assisted explanations,
-                remediation guidance, and additional code-review recommendations.
+                Reviews now include cyclomatic complexity, function-size checks,
+                nesting depth, duplicate blocks, and code-smell findings.
               </p>
             </div>
           </div>

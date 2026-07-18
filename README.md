@@ -10,6 +10,13 @@ Internship Project
 - Google Gemini API
 - ESLint
 
+## Static Quality Signals
+
+Reviews include dependency-free complexity and code-smell checks for submitted
+sources. JavaScript, TypeScript, and Python submissions report cyclomatic
+complexity, long functions, nesting depth, large parameter lists, duplicate
+blocks, TODO-style markers, long lines, and oversized files.
+
 ## AI Review Setup
 
 The server can run Gemini-powered review explanations after static analysis. Add these to

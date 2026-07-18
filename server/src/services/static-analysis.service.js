@@ -48,6 +48,25 @@ const severityWeight = {
     low: 3,
 };
 
+const MAX_QUALITY_FINDINGS_PER_SOURCE = 12;
+const LONG_FILE_LINES = 400;
+const VERY_LONG_FILE_LINES = 800;
+const LONG_FUNCTION_LINES = 80;
+const VERY_LONG_FUNCTION_LINES = 140;
+const MEDIUM_COMPLEXITY = 8;
+const HIGH_COMPLEXITY = 12;
+const MEDIUM_NESTING = 4;
+const HIGH_NESTING = 5;
+const MANY_PARAMETERS = 6;
+const TOO_MANY_PARAMETERS = 8;
+const FILE_MEDIUM_COMPLEXITY = 32;
+const FILE_HIGH_COMPLEXITY = 48;
+const LONG_LINE_LENGTH = 120;
+const DUPLICATE_BLOCK_LINES = 6;
+const MAX_TODO_FINDINGS = 3;
+const MAX_LONG_LINE_FINDINGS = 3;
+const MAX_DUPLICATE_FINDINGS = 2;
+
 const binName = (name) => (process.platform === "win32" ? `${name}.cmd` : name);
 
 const uniquePaths = (paths) => [...new Set(paths)];
@@ -242,6 +261,30 @@ const suggestedFixForRule = (tool, ruleId, message) => {
     if (normalized.includes("eval")) {
         return "Replace dynamic evaluation with a safer explicit implementation.";
     }
+    if (normalized.includes("high-cyclomatic") || normalized.includes("file-complexity")) {
+        return "Split branching logic into smaller functions and move repeated decisions behind named helpers.";
+    }
+    if (normalized.includes("long-function")) {
+        return "Extract coherent blocks into focused helper functions with clear inputs and outputs.";
+    }
+    if (normalized.includes("deep-nesting")) {
+        return "Use guard clauses, early returns, or smaller functions to flatten nested control flow.";
+    }
+    if (normalized.includes("large-parameter-list")) {
+        return "Group related parameters into an options object or domain-specific value object.";
+    }
+    if (normalized.includes("long-file")) {
+        return "Split unrelated responsibilities into smaller modules so each file has a clear purpose.";
+    }
+    if (normalized.includes("duplicate-code")) {
+        return "Extract the repeated logic into a shared helper and call it from each location.";
+    }
+    if (normalized.includes("todo-marker")) {
+        return "Convert TODO/FIXME/HACK markers into tracked work or complete the missing implementation.";
+    }
+    if (normalized.includes("long-line")) {
+        return "Wrap long expressions or extract intermediate variables to improve readability.";
+    }
     if (tool === "TypeScript") {
         return "Fix the TypeScript compiler error and rerun the review.";
     }
@@ -250,6 +293,12 @@ const suggestedFixForRule = (tool, ruleId, message) => {
     }
     if (tool === "Pylint") {
         return "Follow the Pylint recommendation or document why the exception is intentional.";
+    }
+    if (tool === "Complexity") {
+        return "Reduce control-flow complexity before adding more behavior to this area.";
+    }
+    if (tool === "CodeSmell") {
+        return "Refactor this smell into a smaller, clearer unit of code.";
     }
 
     return "Review the reported issue and update the source code accordingly.";
@@ -274,6 +323,553 @@ const buildFinding = ({
     file_name: fileName,
     line_number: line || null,
 });
+
+const buildQualityFinding = ({
+    tool,
+    ruleId,
+    severity,
+    message,
+    explanation,
+    fileName,
+    line,
+}) => ({
+    severity,
+    issue: `[${tool}${ruleId ? ` ${ruleId}` : ""}] ${message}`,
+    explanation,
+    suggested_fix: suggestedFixForRule(tool, ruleId, message),
+    file_name: fileName,
+    line_number: line || null,
+});
+
+const splitSourceLines = (content = "") => (content.length > 0 ? content.split(/\r\n|\r|\n/) : []);
+
+const countMatches = (value, regex) => value.match(regex)?.length || 0;
+
+const countCharacter = (value, character) =>
+    [...value].filter((current) => current === character).length;
+
+const stripStringLiterals = (line) =>
+    line
+        .replace(/"(?:\\.|[^"\\])*"/g, "\"\"")
+        .replace(/'(?:\\.|[^'\\])*'/g, "''")
+        .replace(/`(?:\\.|[^`\\])*`/g, "``");
+
+const stripJavaScriptNoise = (lines) => {
+    let inBlockComment = false;
+
+    return lines.map((line) => {
+        let output = "";
+
+        for (let index = 0; index < line.length; index += 1) {
+            const current = line[index];
+            const next = line[index + 1];
+
+            if (inBlockComment) {
+                if (current === "*" && next === "/") {
+                    inBlockComment = false;
+                    index += 1;
+                }
+                output += " ";
+                continue;
+            }
+
+            if (current === "/" && next === "*") {
+                inBlockComment = true;
+                output += " ";
+                index += 1;
+                continue;
+            }
+
+            if (current === "/" && next === "/") {
+                break;
+            }
+
+            output += current;
+        }
+
+        return stripStringLiterals(output);
+    });
+};
+
+const stripPythonNoise = (lines) =>
+    lines.map((line) => {
+        let quote = null;
+        let output = "";
+
+        for (let index = 0; index < line.length; index += 1) {
+            const current = line[index];
+            const previous = line[index - 1];
+
+            if ((current === "\"" || current === "'") && previous !== "\\") {
+                quote = quote === current ? null : quote || current;
+                output += current;
+                continue;
+            }
+
+            if (current === "#" && !quote) {
+                break;
+            }
+
+            output += quote ? " " : current;
+        }
+
+        return stripStringLiterals(output);
+    });
+
+const getAnalysisLines = (source, analyzerKind) => {
+    const lines = splitSourceLines(source.content || "");
+    if (analyzerKind === "python") return stripPythonNoise(lines);
+    if (analyzerKind === "javascript" || analyzerKind === "typescript") {
+        return stripJavaScriptNoise(lines);
+    }
+    return lines.map(stripStringLiterals);
+};
+
+const countTopLevelParameters = (parameters = "") => {
+    const trimmed = parameters.trim();
+    if (!trimmed) return 0;
+
+    let depth = 0;
+    let count = 1;
+
+    for (const character of trimmed) {
+        if (character === "(" || character === "[" || character === "{") depth += 1;
+        if (character === ")" || character === "]" || character === "}") depth = Math.max(0, depth - 1);
+        if (character === "," && depth === 0) count += 1;
+    }
+
+    return count;
+};
+
+const getJavaScriptFunctionMatch = (line) => {
+    const patterns = [
+        /(?:export\s+default\s+|export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)?\s*(?:<[^>]+>\s*)?\(([^)]*)\)\s*{/,
+        /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?function\s*(?:<[^>]+>\s*)?\(([^)]*)\)\s*{/,
+        /(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:<[^>]+>\s*)?(?:\(([^)]*)\)|([A-Za-z_$][\w$]*))\s*=>\s*{/,
+        /^\s*(?:(?:public|private|protected|static|override)\s+)*(?:async\s+)?([A-Za-z_$][\w$]*)\s*(?:<[^>]+>\s*)?\(([^)]*)\)\s*{/,
+    ];
+
+    for (const pattern of patterns) {
+        const match = line.match(pattern);
+        if (!match) continue;
+
+        const name = match[1] || "anonymous function";
+        const parameters = match[2] ?? match[3] ?? "";
+        if (["if", "for", "while", "switch", "catch"].includes(name)) continue;
+
+        return {
+            name,
+            parameters,
+        };
+    }
+
+    return null;
+};
+
+const findJavaScriptFunctions = (rawLines, analysisLines) => {
+    const functions = [];
+
+    for (let index = 0; index < analysisLines.length; index += 1) {
+        const match = getJavaScriptFunctionMatch(analysisLines[index]);
+        if (!match) continue;
+
+        let balance = 0;
+        let endIndex = index;
+
+        for (let current = index; current < analysisLines.length; current += 1) {
+            const openedOnLine = countCharacter(analysisLines[current], "{") > 0;
+            balance += countCharacter(analysisLines[current], "{");
+            balance -= countCharacter(analysisLines[current], "}");
+
+            if (balance <= 0 && (current > index || openedOnLine)) {
+                endIndex = current;
+                break;
+            }
+
+            endIndex = current;
+        }
+
+        functions.push({
+            name: match.name,
+            startLine: index + 1,
+            endLine: endIndex + 1,
+            lineCount: endIndex - index + 1,
+            parameterCount: countTopLevelParameters(match.parameters),
+            rawLines: rawLines.slice(index, endIndex + 1),
+            analysisLines: analysisLines.slice(index, endIndex + 1),
+        });
+    }
+
+    return functions;
+};
+
+const getIndentSize = (line) => {
+    const indentation = line.match(/^\s*/)?.[0] || "";
+    return [...indentation].reduce((total, character) => total + (character === "\t" ? 4 : 1), 0);
+};
+
+const findPythonFunctions = (rawLines, analysisLines) => {
+    const functions = [];
+    const pattern = /^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\((.*)\)\s*:/;
+
+    for (let index = 0; index < analysisLines.length; index += 1) {
+        const match = analysisLines[index].match(pattern);
+        if (!match) continue;
+
+        const startIndent = getIndentSize(analysisLines[index]);
+        let endIndex = index;
+
+        for (let current = index + 1; current < analysisLines.length; current += 1) {
+            const line = analysisLines[current];
+            if (!line.trim()) {
+                endIndex = current;
+                continue;
+            }
+
+            if (getIndentSize(line) <= startIndent) break;
+            endIndex = current;
+        }
+
+        functions.push({
+            name: match[2],
+            startLine: index + 1,
+            endLine: endIndex + 1,
+            lineCount: endIndex - index + 1,
+            parameterCount: countTopLevelParameters(match[3]),
+            rawLines: rawLines.slice(index, endIndex + 1),
+            analysisLines: analysisLines.slice(index, endIndex + 1),
+        });
+    }
+
+    return functions;
+};
+
+const findFunctions = (rawLines, analysisLines, analyzerKind) => {
+    if (analyzerKind === "python") return findPythonFunctions(rawLines, analysisLines);
+    if (analyzerKind === "javascript" || analyzerKind === "typescript") {
+        return findJavaScriptFunctions(rawLines, analysisLines);
+    }
+    return [];
+};
+
+const calculateCyclomaticComplexity = (analysisLines, analyzerKind) => {
+    if (analysisLines.length === 0) return 0;
+
+    const body = analysisLines.join("\n");
+
+    if (analyzerKind === "python") {
+        return (
+            1 +
+            countMatches(body, /\b(if|elif|for|while|except|case|with)\b/g) +
+            countMatches(body, /\b(and|or)\b/g)
+        );
+    }
+
+    if (analyzerKind === "javascript" || analyzerKind === "typescript") {
+        return (
+            1 +
+            countMatches(body, /\b(if|for|while|case|catch)\b/g) +
+            countMatches(body, /&&|\|\||\?\?/g)
+        );
+    }
+
+    return 0;
+};
+
+const measureJavaScriptNesting = (analysisLines) => {
+    const stack = [];
+    let maxDepth = 0;
+    let maxLine = null;
+
+    analysisLines.forEach((line, index) => {
+        const leadingClosings = line.match(/^\s*}+/)?.[0].length || 0;
+        for (let count = 0; count < leadingClosings; count += 1) stack.pop();
+
+        const controlCount = countMatches(
+            line,
+            /\b(if|else|for|while|switch|case|catch|try)\b/g
+        );
+        const currentDepth = stack.filter(Boolean).length + controlCount;
+
+        if (controlCount > 0 && currentDepth > maxDepth) {
+            maxDepth = currentDepth;
+            maxLine = index + 1;
+        }
+
+        const openCount = countCharacter(line, "{");
+        const remainingCloseCount = Math.max(0, countCharacter(line, "}") - leadingClosings);
+        for (let count = 0; count < openCount; count += 1) stack.push(count < controlCount);
+        for (let count = 0; count < remainingCloseCount; count += 1) stack.pop();
+    });
+
+    return { maxDepth, line: maxLine };
+};
+
+const measurePythonNesting = (analysisLines) => {
+    const stack = [];
+    let maxDepth = 0;
+    let maxLine = null;
+    const controlPattern = /^\s*(if|elif|else|for|while|try|except|finally|with|match|case)\b.*:/;
+
+    analysisLines.forEach((line, index) => {
+        if (!line.trim()) return;
+
+        const indent = getIndentSize(line);
+        while (stack.length > 0 && indent <= stack[stack.length - 1]) stack.pop();
+
+        if (!controlPattern.test(line)) return;
+
+        const currentDepth = stack.length + 1;
+        if (currentDepth > maxDepth) {
+            maxDepth = currentDepth;
+            maxLine = index + 1;
+        }
+        stack.push(indent);
+    });
+
+    return { maxDepth, line: maxLine };
+};
+
+const measureNesting = (analysisLines, analyzerKind) => {
+    if (analyzerKind === "python") return measurePythonNesting(analysisLines);
+    if (analyzerKind === "javascript" || analyzerKind === "typescript") {
+        return measureJavaScriptNesting(analysisLines);
+    }
+    return { maxDepth: 0, line: null };
+};
+
+const getSeverityForThreshold = (value, medium, high) => {
+    if (value >= high) return "high";
+    if (value >= medium) return "medium";
+    return null;
+};
+
+const findDuplicateBlocks = (analysisLines) => {
+    const seen = new Map();
+    const duplicates = [];
+    const normalizedLines = analysisLines.map((line) => line.trim().replace(/\s+/g, " "));
+
+    for (let index = 0; index <= normalizedLines.length - DUPLICATE_BLOCK_LINES; index += 1) {
+        const block = normalizedLines.slice(index, index + DUPLICATE_BLOCK_LINES);
+        const meaningfulLines = block.filter(
+            (line) =>
+                line.length >= 8 &&
+                !/^[{}()[\],;]+$/.test(line) &&
+                !/^(import|export|from|const \{|let \{|var \{)\b/.test(line)
+        );
+
+        if (meaningfulLines.length < DUPLICATE_BLOCK_LINES - 1) continue;
+
+        const key = block.join("\n");
+        const firstIndex = seen.get(key);
+
+        if (firstIndex !== undefined && index - firstIndex >= DUPLICATE_BLOCK_LINES) {
+            duplicates.push({ firstLine: firstIndex + 1, line: index + 1 });
+            if (duplicates.length >= MAX_DUPLICATE_FINDINGS) break;
+        } else if (firstIndex === undefined) {
+            seen.set(key, index);
+        }
+    }
+
+    return duplicates;
+};
+
+const getSourceDisplayName = (source) => source.file_name || source.title || "source";
+
+const analyzeQuality = (source, analyzerKind) => {
+    const fileName = getSourceDisplayName(source);
+    const rawLines = splitSourceLines(source.content || "");
+    const analysisLines = getAnalysisLines(source, analyzerKind);
+    const functions = findFunctions(rawLines, analysisLines, analyzerKind);
+    const findings = [];
+
+    const fileLineSeverity = getSeverityForThreshold(
+        rawLines.length,
+        LONG_FILE_LINES,
+        VERY_LONG_FILE_LINES
+    );
+    if (fileLineSeverity) {
+        findings.push(
+            buildQualityFinding({
+                tool: "CodeSmell",
+                ruleId: "long-file",
+                severity: fileLineSeverity,
+                message: `${fileName} is ${rawLines.length} lines long.`,
+                explanation:
+                    "Large files are harder to navigate and often mix responsibilities that should be reviewed independently.",
+                fileName,
+                line: 1,
+            })
+        );
+    }
+
+    const fileComplexity = calculateCyclomaticComplexity(analysisLines, analyzerKind);
+    const fileComplexitySeverity = getSeverityForThreshold(
+        fileComplexity,
+        FILE_MEDIUM_COMPLEXITY,
+        FILE_HIGH_COMPLEXITY
+    );
+    if (fileComplexitySeverity) {
+        findings.push(
+            buildQualityFinding({
+                tool: "Complexity",
+                ruleId: "file-complexity",
+                severity: fileComplexitySeverity,
+                message: `${fileName} has aggregate cyclomatic complexity of ${fileComplexity}.`,
+                explanation:
+                    "High aggregate branching raises maintenance risk because changes need to account for many possible execution paths.",
+                fileName,
+                line: 1,
+            })
+        );
+    }
+
+    functions.forEach((fn) => {
+        const complexity = calculateCyclomaticComplexity(fn.analysisLines, analyzerKind);
+        const complexitySeverity = getSeverityForThreshold(
+            complexity,
+            MEDIUM_COMPLEXITY,
+            HIGH_COMPLEXITY
+        );
+
+        if (complexitySeverity) {
+            findings.push(
+                buildQualityFinding({
+                    tool: "Complexity",
+                    ruleId: "high-cyclomatic",
+                    severity: complexitySeverity,
+                    message: `${fn.name} has cyclomatic complexity of ${complexity}.`,
+                    explanation:
+                        "This function has enough branching paths that it will be difficult to test and modify safely.",
+                    fileName,
+                    line: fn.startLine,
+                })
+            );
+        }
+
+        const lineSeverity = getSeverityForThreshold(
+            fn.lineCount,
+            LONG_FUNCTION_LINES,
+            VERY_LONG_FUNCTION_LINES
+        );
+        if (lineSeverity) {
+            findings.push(
+                buildQualityFinding({
+                    tool: "CodeSmell",
+                    ruleId: "long-function",
+                    severity: lineSeverity,
+                    message: `${fn.name} is ${fn.lineCount} lines long.`,
+                    explanation:
+                        "Long functions tend to hide separate responsibilities and make review, testing, and reuse harder.",
+                    fileName,
+                    line: fn.startLine,
+                })
+            );
+        }
+
+        const parameterSeverity = getSeverityForThreshold(
+            fn.parameterCount,
+            MANY_PARAMETERS,
+            TOO_MANY_PARAMETERS
+        );
+        if (parameterSeverity) {
+            findings.push(
+                buildQualityFinding({
+                    tool: "CodeSmell",
+                    ruleId: "large-parameter-list",
+                    severity: parameterSeverity,
+                    message: `${fn.name} accepts ${fn.parameterCount} parameters.`,
+                    explanation:
+                        "Large parameter lists make call sites brittle and usually signal that related data should be grouped.",
+                    fileName,
+                    line: fn.startLine,
+                })
+            );
+        }
+    });
+
+    const nesting = measureNesting(analysisLines, analyzerKind);
+    const nestingSeverity = getSeverityForThreshold(nesting.maxDepth, MEDIUM_NESTING, HIGH_NESTING);
+    if (nestingSeverity) {
+        findings.push(
+            buildQualityFinding({
+                tool: "CodeSmell",
+                ruleId: "deep-nesting",
+                severity: nestingSeverity,
+                message: `${fileName} reaches nesting depth ${nesting.maxDepth}.`,
+                explanation:
+                    "Deeply nested control flow is harder to scan and increases the chance of missed edge cases.",
+                fileName,
+                line: nesting.line,
+            })
+        );
+    }
+
+    rawLines.forEach((line, index) => {
+        if (findings.filter((finding) => finding.issue.includes("todo-marker")).length >= MAX_TODO_FINDINGS) {
+            return;
+        }
+
+        if (/\b(TODO|FIXME|HACK|XXX)\b/i.test(line)) {
+            findings.push(
+                buildQualityFinding({
+                    tool: "CodeSmell",
+                    ruleId: "todo-marker",
+                    severity: "low",
+                    message: "Tracked placeholder marker found in source.",
+                    explanation:
+                        "TODO-style markers can become invisible backlog unless they are converted into tracked tasks or completed before release.",
+                    fileName,
+                    line: index + 1,
+                })
+            );
+        }
+    });
+
+    rawLines.forEach((line, index) => {
+        if (findings.filter((finding) => finding.issue.includes("long-line")).length >= MAX_LONG_LINE_FINDINGS) {
+            return;
+        }
+
+        if (line.length > LONG_LINE_LENGTH) {
+            findings.push(
+                buildQualityFinding({
+                    tool: "CodeSmell",
+                    ruleId: "long-line",
+                    severity: "low",
+                    message: `Line ${index + 1} is ${line.length} characters long.`,
+                    explanation:
+                        "Very long lines are harder to review in diffs and often hide expressions that deserve names.",
+                    fileName,
+                    line: index + 1,
+                })
+            );
+        }
+    });
+
+    findDuplicateBlocks(analysisLines).forEach((duplicate) => {
+        findings.push(
+            buildQualityFinding({
+                tool: "CodeSmell",
+                ruleId: "duplicate-code",
+                severity: "medium",
+                message: `Duplicate code block repeats lines ${duplicate.firstLine}-${duplicate.firstLine + DUPLICATE_BLOCK_LINES - 1}.`,
+                explanation:
+                    "Repeated blocks increase maintenance cost because a bug fix or behavior change needs to be applied in multiple places.",
+                fileName,
+                line: duplicate.line,
+            })
+        );
+    });
+
+    const supportsComplexity = ["javascript", "typescript", "python"].includes(analyzerKind);
+
+    return {
+        findings: findings.slice(0, MAX_QUALITY_FINDINGS_PER_SOURCE),
+        tools: supportsComplexity ? ["Complexity", "CodeSmell"] : ["CodeSmell"],
+        notes: [],
+    };
+};
 
 const eslintArgsFor = (filePath, extension) => [
     "--no-config-lookup",
@@ -543,10 +1139,24 @@ const analyzeSource = async (source, tempDir) => {
     const filePath = path.join(sourceDir, fileName);
     await writeFile(filePath, source.content || "", "utf8");
 
-    if (analyzerKind === "javascript") return analyzeJavaScript(source, filePath);
-    if (analyzerKind === "typescript") return analyzeTypeScript(source, filePath);
-    if (analyzerKind === "python") return analyzePython(source, filePath);
-    return analyzeUnsupported(source);
+    let toolResult;
+    if (analyzerKind === "javascript") {
+        toolResult = await analyzeJavaScript(source, filePath);
+    } else if (analyzerKind === "typescript") {
+        toolResult = await analyzeTypeScript(source, filePath);
+    } else if (analyzerKind === "python") {
+        toolResult = await analyzePython(source, filePath);
+    } else {
+        toolResult = analyzeUnsupported(source);
+    }
+
+    const qualityResult = analyzeQuality(source, analyzerKind);
+
+    return {
+        findings: [...toolResult.findings, ...qualityResult.findings],
+        tools: [...toolResult.tools, ...qualityResult.tools],
+        notes: [...toolResult.notes, ...qualityResult.notes],
+    };
 };
 
 const calculateScore = (findings) => {
