@@ -18,6 +18,10 @@ import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { CodeSnippetEditor } from "@/components/review/CodeSnippetEditor";
+import {
+  getDocumentationItems,
+  ReviewDocumentation,
+} from "@/components/review/ReviewDocumentation";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
 import { showApiSuccess } from "@/lib/toast";
@@ -280,6 +284,9 @@ export default function NewReviewPage() {
   const storedLineCount =
     storedReview?.sources.reduce((total, source) => total + source.line_count, 0) ?? 0;
   const storedFindingCount = storedReview?.findings.length ?? 0;
+  const storedDocumentationCount = storedReview
+    ? getDocumentationItems(storedReview.sources).length
+    : 0;
   const selectedProject = projects.find((project) => project.id === projectId);
   const storedProject = projects.find((project) => project.id === storedReview?.review.project_id);
 
@@ -577,6 +584,10 @@ export default function NewReviewPage() {
                   <dd className="font-medium text-zinc-200">{storedFindingCount}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-4">
+                  <dt className="text-zinc-500">Docs</dt>
+                  <dd className="font-medium text-zinc-200">{storedDocumentationCount}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
                   <dt className="text-zinc-500">Score</dt>
                   <dd className="font-medium text-zinc-200">
                     {storedReview.review.overall_score ?? "-"}
@@ -615,6 +626,12 @@ export default function NewReviewPage() {
                   No review findings were reported.
                 </p>
               )}
+            </section>
+          )}
+
+          {storedReview && (
+            <section className="glass-card rounded-2xl p-6">
+              <ReviewDocumentation sources={storedReview.sources} limit={4} showEmpty title="Documentation" />
             </section>
           )}
 

@@ -2,6 +2,7 @@ import { HTTP_STATUS } from "../config/constants.js";
 import * as projectRepository from "../repositories/project.repository.js";
 import * as reviewRepository from "../repositories/review.repository.js";
 import * as aiReviewService from "./ai-review.service.js";
+import * as documentationService from "./documentation.service.js";
 import * as staticAnalysisService from "./static-analysis.service.js";
 import { AppError } from "../utils/apiHandler.js";
 
@@ -90,7 +91,7 @@ const mapReviewSource = (source) => ({
     branch_name: source.branch_name,
     line_count: source.line_count,
     character_count: source.character_count,
-    metadata: source.metadata,
+    metadata: source.metadata || {},
     created_at: source.created_at,
 });
 
@@ -127,6 +128,11 @@ const buildReviewSummary = ({ staticAnalysis, aiReview }) => {
 
     return parts.filter(Boolean).join(" ");
 };
+
+const buildSourceMetadata = (metadata, source) => ({
+    ...metadata,
+    documentation: documentationService.generateSourceDocumentation(source),
+});
 
 const runReviewAnalysis = async (review, sources) => {
     try {
@@ -202,7 +208,10 @@ export const createSnippetReview = async (userId, payload) => {
             content,
             line_count: getLineCount(content),
             character_count: content.length,
-            metadata: { focusAreas },
+            metadata: buildSourceMetadata(
+                { focusAreas },
+                { title, language, file_name: fileName, content }
+            ),
         });
 
     } catch (error) {
@@ -256,12 +265,20 @@ export const createFileReview = async (userId, payload) => {
                 content,
                 line_count: getLineCount(content),
                 character_count: content.length,
-                metadata: {
-                    reviewTitle: title,
-                    focusAreas,
-                    originalSize: file.size ?? null,
-                    mimeType: file.type || null,
-                },
+                metadata: buildSourceMetadata(
+                    {
+                        reviewTitle: title,
+                        focusAreas,
+                        originalSize: file.size ?? null,
+                        mimeType: file.type || null,
+                    },
+                    {
+                        title: file.title?.trim() || fileName,
+                        language,
+                        file_name: fileName,
+                        content,
+                    }
+                ),
             };
         });
 

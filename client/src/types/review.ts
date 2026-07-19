@@ -9,6 +9,37 @@ export interface Review {
   created_at: string;
 }
 
+export interface ReviewDocumentationParameter {
+  name: string;
+  type: string | null;
+  defaultValue: string | null;
+}
+
+export interface ReviewDocumentationItem {
+  kind: "function" | "class" | "api";
+  name: string;
+  signature: string;
+  description: string;
+  fileName: string;
+  lineNumber: number;
+  parameters: ReviewDocumentationParameter[];
+  returns: string | null;
+  method: string | null;
+  path: string | null;
+}
+
+export interface ReviewSourceDocumentation {
+  generatedAt: string;
+  language: string;
+  summary: string;
+  counts: {
+    functions: number;
+    classes: number;
+    apis: number;
+  };
+  items: ReviewDocumentationItem[];
+}
+
 export interface ReviewSource {
   id: string;
   review_id: string;
@@ -24,6 +55,7 @@ export interface ReviewSource {
     reviewTitle?: string;
     originalSize?: number | null;
     mimeType?: string | null;
+    documentation?: ReviewSourceDocumentation;
   };
   created_at: string;
 }

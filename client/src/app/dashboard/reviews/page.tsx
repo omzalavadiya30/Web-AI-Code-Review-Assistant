@@ -6,7 +6,10 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  BookOpen,
   Calendar,
+  ChevronDown,
+  ChevronUp,
   CheckCircle2,
   FileCode2,
   FileSearch,
@@ -20,12 +23,17 @@ import {
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import {
+  getDocumentationItems,
+  ReviewDocumentation,
+} from "@/components/review/ReviewDocumentation";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
 import type { Project } from "@/types/project";
 import type { ReviewFinding, ReviewListItem } from "@/types/review";
 
 const reviewStates = ["All", "Draft", "Completed", "Flagged"] as const;
+const FINDING_PREVIEW_LIMIT = 4;
 type ReviewState = (typeof reviewStates)[number];
 type Severity = ReviewFinding["severity"];
 
@@ -116,6 +124,7 @@ export default function ReviewsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeState, setActiveState] = useState<ReviewState>("All");
   const [search, setSearch] = useState("");
+  const [expandedFindingReviews, setExpandedFindingReviews] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -160,6 +169,7 @@ export default function ReviewsPage() {
       review.findings.map((finding) => ({ finding, review }))
     );
     const allFindings = findingsWithReview.map(({ finding }) => finding);
+    const allDocumentationItems = reviews.flatMap((review) => getDocumentationItems(review.sources));
     const severityCounts = countFindingsBySeverity(allFindings);
     const scoredReviews = reviews.filter((review) => review.overall_score !== null);
     const completedReviews = reviews.filter((review) => review.status === "completed");
@@ -210,6 +220,7 @@ export default function ReviewsPage() {
       recentFindings,
       analyzerRows,
       severityCounts,
+      totalDocumentationItems: allDocumentationItems.length,
       totalFindings: allFindings.length,
       totalLines,
       totalReviews: reviews.length,
@@ -247,6 +258,13 @@ export default function ReviewsPage() {
         icon: Layers,
         color: "text-indigo-300 bg-indigo-500/10 ring-indigo-500/20",
       },
+      {
+        label: "Docs",
+        value: analysisDashboard.totalDocumentationItems.toString(),
+        detail: "Generated items",
+        icon: BookOpen,
+        color: "text-emerald-300 bg-emerald-500/10 ring-emerald-500/20",
+      },
     ],
     [analysisDashboard]
   );
@@ -275,6 +293,11 @@ export default function ReviewsPage() {
         projectName,
         review.review_type,
         ...(review.findings || []).map((finding) => finding.issue),
+        ...getDocumentationItems(review.sources).flatMap((item) => [
+          item.name,
+          item.signature,
+          item.description,
+        ]),
       ]
         .filter(Boolean)
         .some((value) => value?.toLowerCase().includes(query));
@@ -289,6 +312,13 @@ export default function ReviewsPage() {
     ...analysisDashboard.analyzerRows.map((analyzer) => analyzer.count),
     1
   );
+
+  const toggleReviewFindings = (reviewId: string) => {
+    setExpandedFindingReviews((current) => ({
+      ...current,
+      [reviewId]: !current[reviewId],
+    }));
+  };
 
   return (
     <div className="space-y-8">
@@ -310,7 +340,7 @@ export default function ReviewsPage() {
 
       {error && <Alert type="error" message={error} />}
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryCards.map((item) => {
           const Icon = item.icon;
 
@@ -533,6 +563,12 @@ export default function ReviewsPage() {
               const projectName = getProjectName(review.project_id);
               const reviewSeverityCounts = countFindingsBySeverity(review.findings);
               const sortedReviewFindings = sortFindingsBySeverity(review.findings);
+              const isFindingsExpanded = expandedFindingReviews[review.id] || false;
+              const hasHiddenFindings = sortedReviewFindings.length > FINDING_PREVIEW_LIMIT;
+              const visibleReviewFindings = isFindingsExpanded
+                ? sortedReviewFindings
+                : sortedReviewFindings.slice(0, FINDING_PREVIEW_LIMIT);
+              const hiddenFindingCount = sortedReviewFindings.length - FINDING_PREVIEW_LIMIT;
               const scorePercentage = review.overall_score ?? 0;
               const sourceTotals = review.sources.reduce(
                 (totals, item) => ({
@@ -640,7 +676,7 @@ export default function ReviewsPage() {
 
                       {sortedReviewFindings.length > 0 ? (
                         <ul className="mt-3 grid gap-3 xl:grid-cols-2">
-                          {sortedReviewFindings.slice(0, 4).map((finding) => (
+                          {visibleReviewFindings.map((finding) => (
                             <li key={finding.id} className="rounded-xl bg-white/5 p-3 ring-1 ring-white/10">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span
@@ -679,12 +715,31 @@ export default function ReviewsPage() {
                         </div>
                       )}
 
-                      {sortedReviewFindings.length > 4 && (
-                        <p className="mt-3 text-sm text-zinc-500">
-                          +{sortedReviewFindings.length - 4} more finding
-                          {sortedReviewFindings.length - 4 === 1 ? "" : "s"} in this review
-                        </p>
+                      {hasHiddenFindings && (
+                        <button
+                          type="button"
+                          onClick={() => toggleReviewFindings(review.id)}
+                          aria-expanded={isFindingsExpanded}
+                          className="mt-3 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-indigo-300 transition-colors hover:bg-white/5 hover:text-indigo-200"
+                        >
+                          {isFindingsExpanded ? (
+                            <>
+                              <ChevronUp className="h-4 w-4" />
+                              Show fewer findings
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-4 w-4" />
+                              Show {hiddenFindingCount} more finding
+                              {hiddenFindingCount === 1 ? "" : "s"} in this review
+                            </>
+                          )}
+                        </button>
                       )}
+
+                      <div className="mt-5 border-t border-white/10 pt-5">
+                        <ReviewDocumentation sources={review.sources} limit={3} title="Documentation" />
+                      </div>
                     </div>
                   </div>
                 </article>

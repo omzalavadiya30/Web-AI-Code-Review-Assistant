@@ -17,6 +17,13 @@ sources. JavaScript, TypeScript, and Python submissions report cyclomatic
 complexity, long functions, nesting depth, large parameter lists, duplicate
 blocks, TODO-style markers, long lines, and oversized files.
 
+## Documentation Generation
+
+Each submitted source also gets structured documentation stored in source
+metadata. The app detects functions, classes, and common API endpoint patterns,
+then displays generated signatures, descriptions, parameters, return values, and
+line numbers in review results and history.
+
 ## AI Review Setup
 
 The server can run Gemini-powered review explanations after static analysis. Add these to

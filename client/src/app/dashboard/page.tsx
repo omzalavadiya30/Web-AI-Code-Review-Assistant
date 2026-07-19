@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
+import { getDocumentationItems } from "@/components/review/ReviewDocumentation";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
 import type { Project } from "@/types/project";
@@ -89,6 +90,12 @@ export default function DashboardPage() {
       { label: "Projects", value: projects.length.toString() },
       { label: "Reviews", value: reviews.length.toString() },
       {
+        label: "Docs",
+        value: reviews
+          .reduce((total, review) => total + getDocumentationItems(review.sources).length, 0)
+          .toString(),
+      },
+      {
         label: "Open Findings",
         value: reviews
           .reduce((total, review) => total + (review.findings?.length || 0), 0)
@@ -123,7 +130,7 @@ export default function DashboardPage() {
         </Link>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         {stats.map((stat) => (
           <div key={stat.label} className="glass-card rounded-2xl p-5">
             <p className="text-sm text-zinc-500">{stat.label}</p>
@@ -170,10 +177,10 @@ export default function DashboardPage() {
               <CheckCircle2 className="h-6 w-6 text-emerald-300" />
             </div>
             <div>
-              <h3 className="font-semibold">Day 9 Active - quality analysis</h3>
+              <h3 className="font-semibold">Day 10 Active - documentation generation</h3>
               <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Reviews now include cyclomatic complexity, function-size checks,
-                nesting depth, duplicate blocks, and code-smell findings.
+                Reviews now generate documentation for detected functions,
+                classes, and API endpoints alongside quality findings.
               </p>
             </div>
           </div>
