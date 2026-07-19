@@ -48,7 +48,7 @@ const features = [
     icon: Upload,
     title: "Multiple Input Methods",
     description:
-      "Paste snippets, upload files, or connect a GitHub repo — review code your way.",
+      "Paste snippets, upload files, or connect a GitHub repo - review code your way.",
   },
 ];
 
@@ -85,7 +85,7 @@ export default function HomePage() {
 
           <p className="mx-auto mt-6 max-w-2xl text-lg text-zinc-400 sm:text-xl">
             Upload your code and get instant feedback on bugs, security issues,
-            complexity, and best practices — powered by AI and static analysis tools.
+            complexity, and best practices - powered by AI and static analysis tools.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -115,21 +115,21 @@ export default function HomePage() {
                 <code>
                   <span className="text-zinc-500">{"// AI Review Summary"}</span>
                   {"\n"}
-                  <span className="text-emerald-400">✓</span>
+                  <span className="text-emerald-400">OK</span>
                   <span className="text-zinc-300"> Overall Score: </span>
                   <span className="text-cyan-400">87/100</span>
                   {"\n\n"}
-                  <span className="text-amber-400">⚠</span>
+                  <span className="text-amber-400">WARN</span>
                   <span className="text-zinc-300"> Line 42: Unused variable </span>
                   <span className="text-red-400">&apos;result&apos;</span>
                   {"\n"}
-                  <span className="text-indigo-400">→</span>
+                  <span className="text-indigo-400">FIX</span>
                   <span className="text-zinc-400"> Remove or use the variable</span>
                   {"\n\n"}
-                  <span className="text-amber-400">⚠</span>
+                  <span className="text-amber-400">WARN</span>
                   <span className="text-zinc-300"> Line 78: High cyclomatic complexity (12)</span>
                   {"\n"}
-                  <span className="text-indigo-400">→</span>
+                  <span className="text-indigo-400">FIX</span>
                   <span className="text-zinc-400"> Consider splitting into smaller functions</span>
                 </code>
               </pre>
@@ -215,7 +215,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="border-t border-white/5 px-4 py-8 text-center text-sm text-zinc-500">
-        <p>AI Code Review Assistant · Labmentix Internship Project · 2026</p>
+        <p>AI Code Review Assistant | Labmentix Internship Project | 2026</p>
       </footer>
     </div>
   );

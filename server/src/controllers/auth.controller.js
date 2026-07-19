@@ -33,7 +33,7 @@ export const changePassword = asyncHandler(async (req, res) => {
 
 export const forgotPassword = asyncHandler(async (req, res) => {
     const result = await authService.forgotPassword(req.body.email);
-    successResponse(res, HTTP_STATUS.OK, result.message, result.resetToken ? { resetToken: result.resetToken } : null);
+    successResponse(res, HTTP_STATUS.OK, result.message);
 });
 
 export const resetPassword = asyncHandler(async (req, res) => {

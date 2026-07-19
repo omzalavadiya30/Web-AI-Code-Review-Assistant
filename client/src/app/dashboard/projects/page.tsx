@@ -15,12 +15,10 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
+import { getReviewTitle } from "@/lib/review-utils";
 import { showApiSuccess } from "@/lib/toast";
 import type { Project } from "@/types/project";
 import type { ReviewListItem } from "@/types/review";
-
-const getReviewTitle = (review: ReviewListItem) =>
-  review.sources[0]?.metadata?.reviewTitle || review.sources[0]?.title || "Untitled review";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -77,11 +75,19 @@ export default function ProjectsPage() {
     () =>
       reviews
         .filter((review) => review.project_id)
+        .sort(
+          (left, right) =>
+            new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+        )
         .slice(0, 4),
     [reviews]
   );
 
   const canSubmit = projectName.trim().length >= 2 && !isSubmitting;
+  const projectNameById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.project_name])),
+    [projects]
+  );
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -110,7 +116,7 @@ export default function ProjectsPage() {
   };
 
   const getProjectName = (projectId: string | null) =>
-    projects.find((project) => project.id === projectId)?.project_name || "Unknown project";
+    projectId ? projectNameById.get(projectId) || "Unknown project" : "No project";
 
   return (
     <div className="space-y-8">

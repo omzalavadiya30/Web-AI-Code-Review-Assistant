@@ -3,11 +3,10 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useState } from "react";
-import { ArrowLeft, CheckCircle2, Lock } from "lucide-react";
+import { AlertCircle, ArrowLeft, CheckCircle2, Lock } from "lucide-react";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { GuestRoute } from "@/components/auth/RouteGuard";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { PasswordInput } from "@/components/ui/PasswordInput";
 import { authApi } from "@/lib/auth-api";
 import { showApiSuccess } from "@/lib/toast";
@@ -16,14 +15,12 @@ import {
   hasErrors,
   validateConfirmPassword,
   validatePassword,
-  validateRequired,
 } from "@/lib/validation";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams.get("token") || "";
 
-  const [token, setToken] = useState(tokenFromUrl);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -32,7 +29,7 @@ function ResetPasswordForm() {
 
   const validateForm = () => {
     const nextErrors: FieldErrors = {
-      token: validateRequired(token, "Reset token"),
+      token: tokenFromUrl ? "" : "Reset link is missing or invalid",
       password: validatePassword(password),
       confirmPassword: validateConfirmPassword(password, confirmPassword),
     };
@@ -42,7 +39,6 @@ function ResetPasswordForm() {
 
   const handleBlur = (field: keyof FieldErrors) => {
     const validators: Record<string, () => string> = {
-      token: () => validateRequired(token, "Reset token"),
       password: () => validatePassword(password),
       confirmPassword: () => validateConfirmPassword(password, confirmPassword),
     };
@@ -55,7 +51,7 @@ function ResetPasswordForm() {
 
     setIsLoading(true);
     try {
-      const response = await authApi.resetPassword({ token: token.trim(), password });
+      const response = await authApi.resetPassword({ token: tokenFromUrl, password });
       showApiSuccess(response.message);
       setSuccess(true);
     } catch {
@@ -91,31 +87,18 @@ function ResetPasswordForm() {
   return (
     <AuthShell
       title="Reset password"
-      subtitle="Enter your reset token and choose a new password"
-      footer={
-        <Link
-          href="/login"
-          className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to sign in
-        </Link>
-      }
+      subtitle="Choose a new password from your email reset link"
     >
       <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-        <Input
-          id="token"
-          label="Reset Token"
-          type="text"
-          placeholder="Paste your reset token"
-          value={token}
-          onChange={(e) => {
-            setToken(e.target.value);
-            if (errors.token) setErrors((prev) => ({ ...prev, token: "" }));
-          }}
-          onBlur={() => handleBlur("token")}
-          error={errors.token}
-        />
+        {!tokenFromUrl && (
+          <div className="flex items-start gap-3 rounded-xl bg-amber-500/10 p-3 text-sm text-amber-100 ring-1 ring-amber-500/20">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              This reset link is missing a token. Request a new reset email and
+              open the link from your inbox.
+            </p>
+          </div>
+        )}
 
         <PasswordInput
           id="password"
@@ -151,7 +134,13 @@ function ResetPasswordForm() {
           icon={<Lock className="h-4 w-4" />}
         />
 
-        <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          isLoading={isLoading}
+          disabled={!tokenFromUrl}
+        >
           Reset Password
         </Button>
       </form>

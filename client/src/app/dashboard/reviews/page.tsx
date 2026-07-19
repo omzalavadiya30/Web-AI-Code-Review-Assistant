@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -30,6 +30,12 @@ import {
 } from "@/components/review/ReviewDocumentation";
 import { projectApi } from "@/lib/project-api";
 import { reviewApi } from "@/lib/review-api";
+import {
+  formatReviewStatus,
+  formatReviewType,
+  getReviewDateLabels,
+  getReviewTitle,
+} from "@/lib/review-utils";
 import type { Project } from "@/types/project";
 import type { ReviewFinding, ReviewListItem } from "@/types/review";
 
@@ -61,24 +67,6 @@ const sortOptions: { id: SortMode; label: string }[] = [
   { id: "findings", label: "Most findings" },
   { id: "risk", label: "Highest risk" },
 ];
-
-const formatStatus = (status: ReviewListItem["status"]) =>
-  status === "failed" ? "Flagged" : status.charAt(0).toUpperCase() + status.slice(1);
-
-const formatReviewType = (type: ReviewListItem["review_type"]) =>
-  type === "github" ? "GitHub" : type.charAt(0).toUpperCase() + type.slice(1);
-
-const getReviewDateLabels = (createdAt: string) => {
-  const date = new Date(createdAt);
-
-  return {
-    iso: createdAt.slice(0, 10),
-    short: date.toLocaleDateString(),
-  };
-};
-
-const getReviewTitle = (review: ReviewListItem) =>
-  review.sources[0]?.metadata?.reviewTitle || review.sources[0]?.title || "Untitled review";
 
 const severityOrder: Severity[] = ["critical", "high", "medium", "low"];
 
@@ -201,6 +189,7 @@ export default function ReviewsPage() {
   const [expandedFindingReviews, setExpandedFindingReviews] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
     let mounted = true;
@@ -232,11 +221,65 @@ export default function ReviewsPage() {
     };
   }, []);
 
-  const getProjectName = useCallback(
-    (projectId: string | null) =>
-      projects.find((project) => project.id === projectId)?.project_name || null,
+  const projectNameById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project.project_name])),
     [projects]
   );
+
+  const getProjectName = useCallback(
+    (projectId: string | null) =>
+      projectId ? projectNameById.get(projectId) || "Unknown project" : "No project",
+    [projectNameById]
+  );
+
+  const reviewSearchTextById = useMemo(() => {
+    const searchEntries = reviews.map((review) => {
+      const source = review.sources[0];
+      const projectName = review.project_id ? projectNameById.get(review.project_id) : null;
+      const reviewDateLabels = getReviewDateLabels(review.created_at);
+      const searchableText = [
+        getReviewTitle(review),
+        review.summary,
+        source?.title,
+        source?.language,
+        source?.file_name,
+        source?.branch_name,
+        projectName,
+        formatReviewStatus(review.status),
+        formatReviewType(review.review_type),
+        reviewDateLabels.iso,
+        reviewDateLabels.short,
+        review.overall_score === null ? "unscored" : `score ${review.overall_score}`,
+        `${review.findings.length} findings`,
+        ...review.sources.flatMap((reviewSource) => [
+          reviewSource.title,
+          reviewSource.language,
+          reviewSource.file_name,
+          reviewSource.branch_name,
+        ]),
+        ...review.findings.flatMap((finding) => [
+          finding.severity,
+          finding.issue,
+          finding.explanation,
+          finding.suggested_fix,
+          finding.file_name,
+          finding.line_number ? `line ${finding.line_number}` : null,
+        ]),
+        ...getDocumentationItems(review.sources).flatMap((item) => [
+          item.name,
+          item.signature,
+          item.description,
+        ]),
+      ]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .join(" ")
+        .toLowerCase();
+
+      return [review.id, searchableText] as const;
+    });
+
+    return new Map(searchEntries);
+  }, [projectNameById, reviews]);
 
   const analysisDashboard = useMemo(() => {
     const findingsWithReview = reviews.flatMap((review) =>
@@ -344,14 +387,10 @@ export default function ReviewsPage() {
   );
 
   const filteredReviews = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = deferredSearch.trim().toLowerCase();
     const queryTerms = query.split(/\s+/).filter(Boolean);
 
     const matchedReviews = reviews.filter((review) => {
-      const source = review.sources[0];
-      const reviewTitle = getReviewTitle(review);
-      const projectName = getProjectName(review.project_id);
-      const reviewDateLabels = getReviewDateLabels(review.created_at);
       const statusMatch =
         activeState === "All" ||
         review.status === activeState.toLowerCase() ||
@@ -372,56 +411,19 @@ export default function ReviewsPage() {
 
       if (queryTerms.length === 0) return true;
 
-      const searchableText = [
-        reviewTitle,
-        review.summary,
-        source?.title,
-        source?.language,
-        source?.file_name,
-        source?.branch_name,
-        projectName,
-        formatStatus(review.status),
-        formatReviewType(review.review_type),
-        reviewDateLabels.iso,
-        reviewDateLabels.short,
-        review.overall_score === null ? "unscored" : `score ${review.overall_score}`,
-        `${review.findings.length} findings`,
-        ...review.sources.flatMap((reviewSource) => [
-          reviewSource.title,
-          reviewSource.language,
-          reviewSource.file_name,
-          reviewSource.branch_name,
-        ]),
-        ...(review.findings || []).flatMap((finding) => [
-          finding.severity,
-          finding.issue,
-          finding.explanation,
-          finding.suggested_fix,
-          finding.file_name,
-          finding.line_number ? `line ${finding.line_number}` : null,
-        ]),
-        ...getDocumentationItems(review.sources).flatMap((item) => [
-          item.name,
-          item.signature,
-          item.description,
-        ]),
-      ]
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-        .join(" ")
-        .toLowerCase();
-
+      const searchableText = reviewSearchTextById.get(review.id) || "";
       return queryTerms.every((term) => searchableText.includes(term));
     });
 
     return sortReviews(matchedReviews, sortMode);
   }, [
     activeState,
-    getProjectName,
+    deferredSearch,
     projectFilter,
+    reviewSearchTextById,
     reviews,
     reviewTypeFilter,
     scoreFilter,
-    search,
     severityFilter,
     sortMode,
   ]);
@@ -872,7 +874,7 @@ export default function ReviewsPage() {
                           {formatReviewType(review.review_type)}
                         </span>
                         <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-zinc-300 ring-1 ring-white/10">
-                          {formatStatus(review.status)}
+                          {formatReviewStatus(review.status)}
                         </span>
                       </div>
                       <h2 className="mt-3 truncate text-lg font-semibold">
@@ -919,8 +921,8 @@ export default function ReviewsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[14rem_1fr]">
-                    <div className="rounded-xl bg-white/5 p-4 ring-1 ring-white/10">
+                  <div className="mt-4 grid items-start gap-4 lg:grid-cols-[14rem_1fr]">
+                    <div className="h-fit self-start rounded-xl bg-white/5 p-4 ring-1 ring-white/10 lg:sticky lg:top-24">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-sm font-medium text-zinc-200">Score health</span>
                         <span className={`text-sm font-semibold ${getScoreTone(review.overall_score)}`}>

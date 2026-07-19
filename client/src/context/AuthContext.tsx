@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await authApi.logout();
       showApiSuccess(response.message);
     } catch {
-      // Token may already be invalid — still clear local session
+      // Token may already be invalid; still clear local session.
     } finally {
       authStorage.clear();
       setUser(null);

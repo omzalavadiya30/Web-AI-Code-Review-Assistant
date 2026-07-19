@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CodeReview AI — AI-Powered Code Review Assistant",
+  title: "CodeReview AI - AI-Powered Code Review Assistant",
   description:
     "Upload code, get instant AI-powered reviews. Detect bugs, improve quality, and learn best practices.",
 };

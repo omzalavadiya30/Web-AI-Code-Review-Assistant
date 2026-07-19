@@ -14,7 +14,7 @@ import { FieldErrors, hasErrors, validateEmail } from "@/lib/validation";
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [resetToken, setResetToken] = useState("");
+  const [sentMessage, setSentMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   const validateForm = () => {
@@ -27,15 +27,13 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     if (!validateForm()) return;
 
-    setResetToken("");
+    setSentMessage("");
     setIsLoading(true);
 
     try {
       const response = await authApi.forgotPassword(email.trim());
       showApiSuccess(response.message);
-      if (response.data?.resetToken) {
-        setResetToken(response.data.resetToken);
-      }
+      setSentMessage(response.message);
     } catch {
       // API error toast shown centrally in api.ts
     } finally {
@@ -75,15 +73,13 @@ export default function ForgotPasswordPage() {
           />
 
           <Button type="submit" className="w-full" size="lg" isLoading={isLoading}>
-            Send Reset Link
+            {sentMessage ? "Send Another Link" : "Send Reset Link"}
           </Button>
 
-          {resetToken && (
-            <Link href={`/reset-password?token=${resetToken}`}>
-              <Button variant="secondary" className="w-full">
-                Go to Reset Password
-              </Button>
-            </Link>
+          {sentMessage && (
+            <p className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-200 ring-1 ring-emerald-500/20">
+              {sentMessage}. Please check your email for the reset link.
+            </p>
           )}
         </form>
       </AuthShell>

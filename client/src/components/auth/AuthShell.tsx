@@ -38,7 +38,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
           </h1>
           <p className="mt-4 max-w-md text-lg text-zinc-400">
             Your AI-powered code review assistant. Catch bugs, improve quality,
-            and learn best practices — before your PR even opens.
+            and learn best practices - before your PR even opens.
           </p>
 
           <ul className="mt-10 space-y-4">
@@ -54,7 +54,7 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
         </div>
 
         <p className="text-sm text-zinc-500">
-          Internship Project · Labmentix · 2026
+          Internship Project | Labmentix | 2026
         </p>
       </div>
 

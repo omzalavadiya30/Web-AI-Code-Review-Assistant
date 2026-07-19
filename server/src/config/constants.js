@@ -7,6 +7,9 @@ export const SUPABASE_URL = process.env.SUPABASE_URL
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 export const JWT_SECRET = process.env.JWT_SECRET
 export const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d"
+export const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000"
+export const RESEND_API_KEY = process.env.RESEND_API_KEY
+export const RESEND_FROM_EMAIL =process.env.RESEND_FROM_EMAIL
 export const AI_REVIEW_PROVIDER = process.env.AI_REVIEW_PROVIDER || "gemini"
 export const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash"
@@ -35,6 +38,9 @@ const config = {
     SUPABASE_SERVICE_ROLE_KEY,
     JWT_SECRET,
     JWT_EXPIRES_IN,
+    CLIENT_URL,
+    RESEND_API_KEY,
+    RESEND_FROM_EMAIL,
     AI_REVIEW_PROVIDER,
     GEMINI_API_KEY,
     GEMINI_MODEL,

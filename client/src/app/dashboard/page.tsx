@@ -4,13 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
-  CheckCircle2,
   Code2,
   FolderKanban,
   History,
-  Sparkles,
   Upload,
 } from "lucide-react";
+import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { getDocumentationItems } from "@/components/review/ReviewDocumentation";
@@ -47,6 +46,8 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [reviews, setReviews] = useState<ReviewListItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -60,12 +61,16 @@ export default function DashboardPage() {
         if (mounted) {
           setReviews(reviewsResponse.data || []);
           setProjects(projectsResponse.data || []);
+          setError("");
         }
-      } catch {
+      } catch (loadError) {
         if (mounted) {
           setReviews([]);
           setProjects([]);
+          setError(loadError instanceof Error ? loadError.message : "Failed to load dashboard");
         }
+      } finally {
+        if (mounted) setIsLoading(false);
       }
     };
 
@@ -78,6 +83,9 @@ export default function DashboardPage() {
 
   const stats = useMemo(() => {
     const scoredReviews = reviews.filter((review) => review.overall_score !== null);
+    const latestReview = [...reviews].sort(
+      (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    )[0];
     const averageScore =
       scoredReviews.length > 0
         ? Math.round(
@@ -104,7 +112,9 @@ export default function DashboardPage() {
       { label: "Avg. Score", value: averageScore },
       {
         label: "Last Review",
-        value: reviews[0]?.created_at ? new Date(reviews[0].created_at).toLocaleDateString() : "None",
+        value: latestReview?.created_at
+          ? new Date(latestReview.created_at).toLocaleDateString()
+          : "None",
       },
     ];
   }, [projects.length, reviews]);
@@ -130,13 +140,22 @@ export default function DashboardPage() {
         </Link>
       </section>
 
+      {error && <Alert type="error" message={error} />}
+
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
-        {stats.map((stat) => (
-          <div key={stat.label} className="glass-card rounded-2xl p-5">
-            <p className="text-sm text-zinc-500">{stat.label}</p>
-            <p className="mt-2 text-3xl font-bold">{stat.value}</p>
-          </div>
-        ))}
+        {isLoading
+          ? Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="glass-card rounded-2xl p-5">
+                <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+                <div className="mt-4 h-8 w-16 animate-pulse rounded bg-white/10" />
+              </div>
+            ))
+          : stats.map((stat) => (
+              <div key={stat.label} className="glass-card rounded-2xl p-5">
+                <p className="text-sm text-zinc-500">{stat.label}</p>
+                <p className="mt-2 text-3xl font-bold">{stat.value}</p>
+              </div>
+            ))}
       </section>
 
       <section>
@@ -167,33 +186,6 @@ export default function DashboardPage() {
               <p className="mt-1 text-sm text-zinc-400">{action.description}</p>
             </Link>
           ))}
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-[1.3fr_0.7fr]">
-        <div className="glass-card rounded-2xl p-6">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/25">
-              <CheckCircle2 className="h-6 w-6 text-emerald-300" />
-            </div>
-            <div>
-              <h3 className="font-semibold">Day 10 Active - documentation generation</h3>
-              <p className="mt-1 max-w-2xl text-sm text-zinc-400">
-                Reviews now generate documentation for detected functions,
-                classes, and API endpoints alongside quality findings.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="glass-card rounded-2xl p-6">
-          <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/15 ring-1 ring-indigo-500/25">
-            <Sparkles className="h-5 w-5 text-indigo-300" />
-          </div>
-          <h3 className="font-semibold">Next milestone</h3>
-          <p className="mt-1 text-sm text-zinc-400">
-            Add repository-level review context and richer pull-request style reports.
-          </p>
         </div>
       </section>
     </div>

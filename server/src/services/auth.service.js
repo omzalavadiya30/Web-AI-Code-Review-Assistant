@@ -4,6 +4,7 @@ import { AppError } from "../utils/apiHandler.js";
 import { HTTP_STATUS } from "../config/constants.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
 import { generateToken } from "../utils/jwt.js";
+import { sendPasswordResetEmail } from "./email.service.js";
 
 const sanitizeUser = (user) => ({
     id: user.id,
@@ -113,9 +114,13 @@ export const forgotPassword = async (email) => {
         reset_token_expires: resetTokenExpires,
     });
 
+    await sendPasswordResetEmail({
+        to: user.email,
+        token: resetToken,
+    });
+
     return {
         message: "If that email exists, a reset link has been sent",
-        ...(process.env.NODE_ENV === "development" && { resetToken }),
     };
 };
 

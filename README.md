@@ -37,4 +37,16 @@ GEMINI_MODEL=gemini-3.5-flash
 
 Set `AI_REVIEW_PROVIDER=none` to keep only static analysis.
 
+## Password Reset Email Setup
+
+Forgot-password emails are sent with Resend. Add these to `server/.env`:
+
+```env
+CLIENT_URL=http://localhost:3000
+RESEND_API_KEY=your_resend_api_key
+RESEND_FROM_EMAIL=CodeReview AI <onboarding@resend.dev>
+```
+
+Use a verified Resend sender/domain for production.
+
 Project is under development.
