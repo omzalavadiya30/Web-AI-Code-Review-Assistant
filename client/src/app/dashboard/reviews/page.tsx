@@ -19,6 +19,7 @@ import {
   Layers,
   Loader2,
   Search,
+  X,
 } from "lucide-react";
 import { Alert } from "@/components/ui/Alert";
 import { Button } from "@/components/ui/Button";
@@ -32,13 +33,49 @@ import { reviewApi } from "@/lib/review-api";
 import type { Project } from "@/types/project";
 import type { ReviewFinding, ReviewListItem } from "@/types/review";
 
-const reviewStates = ["All", "Draft", "Completed", "Flagged"] as const;
+const reviewStates = ["All", "Queued", "Draft", "Completed", "Flagged"] as const;
 const FINDING_PREVIEW_LIMIT = 4;
 type ReviewState = (typeof reviewStates)[number];
 type Severity = ReviewFinding["severity"];
+type ReviewTypeFilter = "All" | "Snippet" | "File" | "GitHub";
+type SeverityFilter = "All" | "Critical" | "High" | "Medium" | "Low";
+type ScoreFilter = "all" | "excellent" | "healthy" | "needs-work" | "unscored";
+type SortMode = "newest" | "oldest" | "score-high" | "score-low" | "findings" | "risk";
+
+const reviewTypeFilters: ReviewTypeFilter[] = ["All", "Snippet", "File", "GitHub"];
+const severityFilters: SeverityFilter[] = ["All", "Critical", "High", "Medium", "Low"];
+
+const scoreFilters: { id: ScoreFilter; label: string }[] = [
+  { id: "all", label: "All scores" },
+  { id: "excellent", label: "85 and above" },
+  { id: "healthy", label: "70 to 84" },
+  { id: "needs-work", label: "Below 70" },
+  { id: "unscored", label: "Unscored" },
+];
+
+const sortOptions: { id: SortMode; label: string }[] = [
+  { id: "newest", label: "Newest first" },
+  { id: "oldest", label: "Oldest first" },
+  { id: "score-high", label: "Highest score" },
+  { id: "score-low", label: "Lowest score" },
+  { id: "findings", label: "Most findings" },
+  { id: "risk", label: "Highest risk" },
+];
 
 const formatStatus = (status: ReviewListItem["status"]) =>
   status === "failed" ? "Flagged" : status.charAt(0).toUpperCase() + status.slice(1);
+
+const formatReviewType = (type: ReviewListItem["review_type"]) =>
+  type === "github" ? "GitHub" : type.charAt(0).toUpperCase() + type.slice(1);
+
+const getReviewDateLabels = (createdAt: string) => {
+  const date = new Date(createdAt);
+
+  return {
+    iso: createdAt.slice(0, 10),
+    short: date.toLocaleDateString(),
+  };
+};
 
 const getReviewTitle = (review: ReviewListItem) =>
   review.sources[0]?.metadata?.reviewTitle || review.sources[0]?.title || "Untitled review";
@@ -119,11 +156,48 @@ const getScoreBarClass = (score: number | null) => {
   return "bg-red-400";
 };
 
+const matchesScoreFilter = (score: number | null, filter: ScoreFilter) => {
+  if (filter === "all") return true;
+  if (filter === "unscored") return score === null;
+  if (score === null) return false;
+  if (filter === "excellent") return score >= 85;
+  if (filter === "healthy") return score >= 70 && score < 85;
+  return score < 70;
+};
+
+const sortReviews = (reviews: ReviewListItem[], sortMode: SortMode) =>
+  [...reviews].sort((left, right) => {
+    if (sortMode === "oldest") {
+      return new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+    }
+    if (sortMode === "score-high") {
+      return (right.overall_score ?? -1) - (left.overall_score ?? -1);
+    }
+    if (sortMode === "score-low") {
+      return (left.overall_score ?? Number.MAX_SAFE_INTEGER) -
+        (right.overall_score ?? Number.MAX_SAFE_INTEGER);
+    }
+    if (sortMode === "findings") {
+      return right.findings.length - left.findings.length;
+    }
+    if (sortMode === "risk") {
+      return getRiskScore(right) - getRiskScore(left);
+    }
+
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+  });
+
 export default function ReviewsPage() {
   const [reviews, setReviews] = useState<ReviewListItem[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeState, setActiveState] = useState<ReviewState>("All");
   const [search, setSearch] = useState("");
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [reviewTypeFilter, setReviewTypeFilter] = useState<ReviewTypeFilter>("All");
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("All");
+  const [scoreFilter, setScoreFilter] = useState<ScoreFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
   const [expandedFindingReviews, setExpandedFindingReviews] = useState<Record<string, boolean>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -271,38 +345,86 @@ export default function ReviewsPage() {
 
   const filteredReviews = useMemo(() => {
     const query = search.trim().toLowerCase();
+    const queryTerms = query.split(/\s+/).filter(Boolean);
 
-    return reviews.filter((review) => {
+    const matchedReviews = reviews.filter((review) => {
       const source = review.sources[0];
       const reviewTitle = getReviewTitle(review);
       const projectName = getProjectName(review.project_id);
+      const reviewDateLabels = getReviewDateLabels(review.created_at);
       const statusMatch =
         activeState === "All" ||
         review.status === activeState.toLowerCase() ||
         (activeState === "Flagged" && review.status === "failed");
+      const projectMatch =
+        projectFilter === "all" ||
+        (projectFilter === "none" ? review.project_id === null : review.project_id === projectFilter);
+      const typeMatch =
+        reviewTypeFilter === "All" || review.review_type === reviewTypeFilter.toLowerCase();
+      const severityMatch =
+        severityFilter === "All" ||
+        review.findings.some((finding) => finding.severity === severityFilter.toLowerCase());
+      const scoreMatch = matchesScoreFilter(review.overall_score, scoreFilter);
 
-      if (!statusMatch) return false;
-      if (!query) return true;
+      if (!statusMatch || !projectMatch || !typeMatch || !severityMatch || !scoreMatch) {
+        return false;
+      }
 
-      return [
+      if (queryTerms.length === 0) return true;
+
+      const searchableText = [
         reviewTitle,
+        review.summary,
         source?.title,
         source?.language,
         source?.file_name,
         source?.branch_name,
         projectName,
-        review.review_type,
-        ...(review.findings || []).map((finding) => finding.issue),
+        formatStatus(review.status),
+        formatReviewType(review.review_type),
+        reviewDateLabels.iso,
+        reviewDateLabels.short,
+        review.overall_score === null ? "unscored" : `score ${review.overall_score}`,
+        `${review.findings.length} findings`,
+        ...review.sources.flatMap((reviewSource) => [
+          reviewSource.title,
+          reviewSource.language,
+          reviewSource.file_name,
+          reviewSource.branch_name,
+        ]),
+        ...(review.findings || []).flatMap((finding) => [
+          finding.severity,
+          finding.issue,
+          finding.explanation,
+          finding.suggested_fix,
+          finding.file_name,
+          finding.line_number ? `line ${finding.line_number}` : null,
+        ]),
         ...getDocumentationItems(review.sources).flatMap((item) => [
           item.name,
           item.signature,
           item.description,
         ]),
       ]
-        .filter(Boolean)
-        .some((value) => value?.toLowerCase().includes(query));
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .join(" ")
+        .toLowerCase();
+
+      return queryTerms.every((term) => searchableText.includes(term));
     });
-  }, [activeState, getProjectName, reviews, search]);
+
+    return sortReviews(matchedReviews, sortMode);
+  }, [
+    activeState,
+    getProjectName,
+    projectFilter,
+    reviews,
+    reviewTypeFilter,
+    scoreFilter,
+    search,
+    severityFilter,
+    sortMode,
+  ]);
 
   const maxSeverityCount = Math.max(
     ...severityOrder.map((severity) => analysisDashboard.severityCounts[severity]),
@@ -319,6 +441,32 @@ export default function ReviewsPage() {
       [reviewId]: !current[reviewId],
     }));
   };
+
+  const activeFilterCount = [
+    search.trim().length > 0,
+    activeState !== "All",
+    projectFilter !== "all",
+    reviewTypeFilter !== "All",
+    severityFilter !== "All",
+    scoreFilter !== "all",
+    sortMode !== "newest",
+  ].filter(Boolean).length;
+
+  const clearFilters = () => {
+    setSearch("");
+    setActiveState("All");
+    setProjectFilter("all");
+    setReviewTypeFilter("All");
+    setSeverityFilter("All");
+    setScoreFilter("all");
+    setSortMode("newest");
+  };
+
+  const hasReviews = reviews.length > 0;
+  const emptyStateTitle = hasReviews ? "No matching reviews" : "No reviews yet";
+  const emptyStateMessage = hasReviews
+    ? "Adjust the search terms or filters to widen the review history."
+    : "Analyzed snippets and uploaded files will appear here with review findings.";
 
   return (
     <div className="space-y-8">
@@ -521,7 +669,7 @@ export default function ReviewsPage() {
         <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
           <Input
             id="review-search"
-            placeholder="Search reviews by title, language, or branch"
+            placeholder="Search reviews, projects, findings, or docs"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             icon={<Search className="h-4 w-4" />}
@@ -543,12 +691,145 @@ export default function ReviewsPage() {
             ))}
             <button
               type="button"
-              aria-label="Open filters"
-              className="rounded-xl bg-white/5 p-2 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+              onClick={() => setIsFilterPanelOpen((open) => !open)}
+              aria-expanded={isFilterPanelOpen}
+              aria-label="Toggle filters"
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors ${
+                isFilterPanelOpen || activeFilterCount > 0
+                  ? "bg-cyan-500/15 text-cyan-200 ring-1 ring-cyan-500/25"
+                  : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white"
+              }`}
             >
               <Filter className="h-5 w-5" />
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-cyan-400/20 px-1.5 py-0.5 text-xs text-cyan-100">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
           </div>
+        </div>
+
+        {isFilterPanelOpen && (
+          <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="space-y-2">
+              <label htmlFor="project-filter" className="block text-xs font-medium text-zinc-500">
+                Project
+              </label>
+              <select
+                id="project-filter"
+                value={projectFilter}
+                onChange={(event) => setProjectFilter(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-[#111118] px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                style={{ colorScheme: "dark" }}
+              >
+                <option value="all" className="bg-[#111118] text-zinc-100">
+                  All projects
+                </option>
+                <option value="none" className="bg-[#111118] text-zinc-100">
+                  No project
+                </option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id} className="bg-[#111118] text-zinc-100">
+                    {project.project_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="type-filter" className="block text-xs font-medium text-zinc-500">
+                Source Type
+              </label>
+              <select
+                id="type-filter"
+                value={reviewTypeFilter}
+                onChange={(event) => setReviewTypeFilter(event.target.value as ReviewTypeFilter)}
+                className="w-full rounded-xl border border-white/10 bg-[#111118] px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                style={{ colorScheme: "dark" }}
+              >
+                {reviewTypeFilters.map((type) => (
+                  <option key={type} value={type} className="bg-[#111118] text-zinc-100">
+                    {type === "All" ? "All types" : type}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="severity-filter" className="block text-xs font-medium text-zinc-500">
+                Severity
+              </label>
+              <select
+                id="severity-filter"
+                value={severityFilter}
+                onChange={(event) => setSeverityFilter(event.target.value as SeverityFilter)}
+                className="w-full rounded-xl border border-white/10 bg-[#111118] px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                style={{ colorScheme: "dark" }}
+              >
+                {severityFilters.map((severity) => (
+                  <option key={severity} value={severity} className="bg-[#111118] text-zinc-100">
+                    {severity === "All" ? "All severities" : severity}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="score-filter" className="block text-xs font-medium text-zinc-500">
+                Score
+              </label>
+              <select
+                id="score-filter"
+                value={scoreFilter}
+                onChange={(event) => setScoreFilter(event.target.value as ScoreFilter)}
+                className="w-full rounded-xl border border-white/10 bg-[#111118] px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                style={{ colorScheme: "dark" }}
+              >
+                {scoreFilters.map((score) => (
+                  <option key={score.id} value={score.id} className="bg-[#111118] text-zinc-100">
+                    {score.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="sort-mode" className="block text-xs font-medium text-zinc-500">
+                Sort
+              </label>
+              <select
+                id="sort-mode"
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as SortMode)}
+                className="w-full rounded-xl border border-white/10 bg-[#111118] px-3 py-2.5 text-sm text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                style={{ colorScheme: "dark" }}
+              >
+                {sortOptions.map((option) => (
+                  <option key={option.id} value={option.id} className="bg-[#111118] text-zinc-100">
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm text-zinc-500 sm:flex-row sm:items-center sm:justify-between">
+          <p>
+            Showing {filteredReviews.length} of {reviews.length} review
+            {reviews.length === 1 ? "" : "s"}
+          </p>
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="inline-flex items-center gap-2 self-start rounded-lg px-2.5 py-1.5 font-medium text-zinc-300 transition-colors hover:bg-white/5 hover:text-white sm:self-auto"
+            >
+              <X className="h-4 w-4" />
+              Clear filters
+            </button>
+          )}
         </div>
 
         {isLoading ? (
@@ -588,7 +869,7 @@ export default function ReviewsPage() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/15 px-2.5 py-1 text-xs font-medium text-indigo-200 ring-1 ring-indigo-500/20">
                           <FileCode2 className="h-3.5 w-3.5" />
-                          {review.review_type}
+                          {formatReviewType(review.review_type)}
                         </span>
                         <span className="rounded-full bg-white/5 px-2.5 py-1 text-xs font-medium text-zinc-300 ring-1 ring-white/10">
                           {formatStatus(review.status)}
@@ -632,7 +913,7 @@ export default function ReviewsPage() {
                         <p className="text-xs text-zinc-500">Created</p>
                         <p className="mt-1 flex items-center gap-1.5 font-semibold text-zinc-100">
                           <Calendar className="h-3.5 w-3.5 text-cyan-300" />
-                          {new Date(review.created_at).toLocaleDateString()}
+                          {getReviewDateLabels(review.created_at).short}
                         </p>
                       </div>
                     </div>
@@ -749,16 +1030,27 @@ export default function ReviewsPage() {
         ) : (
           <div className="mt-10 rounded-2xl border border-white/10 bg-white/3 px-6 py-12 text-center">
             <FileSearch className="mx-auto h-12 w-12 text-zinc-500" />
-            <h2 className="mt-4 text-lg font-semibold">No reviews yet</h2>
+            <h2 className="mt-4 text-lg font-semibold">{emptyStateTitle}</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-zinc-400">
-              Analyzed snippets and uploaded files will appear here with review findings.
+              {emptyStateMessage}
             </p>
-            <Link href="/dashboard/new" className="mt-6 inline-flex">
-              <Button variant="secondary">
-                <History className="h-4 w-4" />
-                Create first review
-              </Button>
-            </Link>
+            {hasReviews ? (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2.5 text-sm font-semibold text-zinc-200 ring-1 ring-white/10 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+                Clear filters
+              </button>
+            ) : (
+              <Link href="/dashboard/new" className="mt-6 inline-flex">
+                <Button variant="secondary">
+                  <History className="h-4 w-4" />
+                  Create first review
+                </Button>
+              </Link>
+            )}
           </div>
         )}
       </section>
