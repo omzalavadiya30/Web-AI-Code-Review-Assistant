@@ -4,16 +4,57 @@ import { showApiError } from "./toast";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
+type ApiValidationError = { msg: string; path: string };
+
 export class ApiError extends Error {
   status: number;
-  errors?: { msg: string; path: string }[];
+  errors?: ApiValidationError[];
 
-  constructor(message: string, status: number, errors?: { msg: string; path: string }[]) {
+  constructor(message: string, status: number, errors?: ApiValidationError[]) {
     super(message);
     this.status = status;
     this.errors = errors;
   }
 }
+
+const isValidationError = (value: unknown): value is ApiValidationError =>
+  typeof value === "object" &&
+  value !== null &&
+  "msg" in value &&
+  typeof (value as ApiValidationError).msg === "string";
+
+const normalizeErrors = (errors: unknown): ApiValidationError[] | undefined => {
+  if (!Array.isArray(errors)) return undefined;
+
+  const normalized = errors.filter(isValidationError).map((error) => ({
+    msg: error.msg,
+    path: typeof error.path === "string" ? error.path : "body",
+  }));
+
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const parseApiResponse = async <T>(response: Response): Promise<ApiResponse<T>> => {
+  const text = await response.text();
+
+  if (!text) {
+    return {
+      success: response.ok,
+      message: response.statusText || (response.ok ? "Request successful" : "Request failed"),
+    };
+  }
+
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    return {
+      success: false,
+      message: response.ok
+        ? "Server returned an invalid response"
+        : response.statusText || "Request failed",
+    };
+  }
+};
 
 async function request<T>(
   endpoint: string,
@@ -36,13 +77,13 @@ async function request<T>(
       headers,
     });
 
-    const data: ApiResponse<T> = await response.json();
+    const data = await parseApiResponse<T>(response);
 
     if (!response.ok || !data.success) {
       const apiError = new ApiError(
-        data.message || "Something went wrong",
+        data.message || `Request failed with status ${response.status}`,
         response.status,
-        data.errors
+        normalizeErrors(data.errors)
       );
       showApiError(apiError);
       throw apiError;

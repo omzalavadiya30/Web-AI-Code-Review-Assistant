@@ -1,21 +1,10 @@
-import { body, validationResult } from "express-validator";
+import { body } from "express-validator";
+import { validateRequest } from "../middleware/validate.middleware.js";
 
 const MAX_SNIPPET_CHARACTERS = 100000;
 const MAX_UPLOAD_FILES = 8;
 const MAX_FILE_CHARACTERS = 100000;
 const MAX_TOTAL_FILE_CHARACTERS = 250000;
-
-const handleValidation = (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation failed",
-            errors: errors.array(),
-        });
-    }
-    next();
-};
 
 export const createSnippetReviewValidation = [
     body("title")
@@ -74,7 +63,7 @@ export const createSnippetReviewValidation = [
         .trim()
         .isLength({ min: 1, max: 60 })
         .withMessage("Each focus area must be between 1 and 60 characters"),
-    handleValidation,
+    validateRequest,
 ];
 
 export const createFileReviewValidation = [
@@ -175,5 +164,5 @@ export const createFileReviewValidation = [
         .trim()
         .isLength({ max: 120 })
         .withMessage("File type must be 120 characters or fewer"),
-    handleValidation,
+    validateRequest,
 ];

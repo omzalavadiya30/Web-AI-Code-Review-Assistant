@@ -1,55 +1,90 @@
-import { body, validationResult } from "express-validator";
-
-const handleValidation = (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({
-            success: false,
-            message: "Validation failed",
-            errors: errors.array(),
-        });
-    }
-    next();
-};
+import { body } from "express-validator";
+import { validateRequest } from "../middleware/validate.middleware.js";
 
 export const registerValidation = [
-    body("name").trim().notEmpty().withMessage("Name is required"),
-    body("email").isEmail().withMessage("Invalid email address"),
+    body("name")
+        .isString()
+        .withMessage("Name is required")
+        .bail()
+        .trim()
+        .isLength({ min: 2, max: 255 })
+        .withMessage("Name must be between 2 and 255 characters")
+        .bail()
+        .custom((value) => !/^\d+$/.test(value))
+        .withMessage("Name cannot be only numbers"),
+    body("email").isEmail().withMessage("Invalid email address").bail().normalizeEmail(),
     body("password")
-        .isLength({ min: 6 })
-        .withMessage("Password must be at least 6 characters long"),
-    handleValidation,
+        .isString()
+        .withMessage("Password is required")
+        .bail()
+        .isLength({ min: 6, max: 128 })
+        .withMessage("Password must be between 6 and 128 characters long"),
+    validateRequest,
 ];
 
 export const loginValidation = [
-    body("email").isEmail().withMessage("Invalid email address"),
-    body("password").notEmpty().withMessage("Password is required"),
-    handleValidation,
+    body("email").isEmail().withMessage("Invalid email address").bail().normalizeEmail(),
+    body("password")
+        .isString()
+        .withMessage("Password is required")
+        .bail()
+        .notEmpty()
+        .withMessage("Password is required"),
+    validateRequest,
 ];
 
 export const updateProfileValidation = [
-    body("name").optional().trim().notEmpty().withMessage("Name cannot be empty"),
-    body("email").optional().isEmail().withMessage("Invalid email address"),
-    handleValidation,
+    body("name")
+        .optional()
+        .isString()
+        .withMessage("Name must be text")
+        .bail()
+        .trim()
+        .isLength({ min: 2, max: 255 })
+        .withMessage("Name must be between 2 and 255 characters")
+        .bail()
+        .custom((value) => !/^\d+$/.test(value))
+        .withMessage("Name cannot be only numbers"),
+    body("email").optional().isEmail().withMessage("Invalid email address").bail().normalizeEmail(),
+    validateRequest,
 ];
 
 export const changePasswordValidation = [
-    body("currentPassword").notEmpty().withMessage("Current password is required"),
+    body("currentPassword")
+        .isString()
+        .withMessage("Current password is required")
+        .bail()
+        .notEmpty()
+        .withMessage("Current password is required"),
     body("newPassword")
-        .isLength({ min: 6 })
-        .withMessage("New password must be at least 6 characters long"),
-    handleValidation,
+        .isString()
+        .withMessage("New password is required")
+        .bail()
+        .isLength({ min: 6, max: 128 })
+        .withMessage("New password must be between 6 and 128 characters long")
+        .bail()
+        .custom((value, { req }) => value !== req.body.currentPassword)
+        .withMessage("New password must be different from current password"),
+    validateRequest,
 ];
 
 export const forgotPasswordValidation = [
-    body("email").isEmail().withMessage("Invalid email address"),
-    handleValidation,
+    body("email").isEmail().withMessage("Invalid email address").bail().normalizeEmail(),
+    validateRequest,
 ];
 
 export const resetPasswordValidation = [
-    body("token").notEmpty().withMessage("Reset token is required"),
+    body("token")
+        .isString()
+        .withMessage("Reset token is required")
+        .bail()
+        .notEmpty()
+        .withMessage("Reset token is required"),
     body("password")
-        .isLength({ min: 6 })
-        .withMessage("Password must be at least 6 characters long"),
-    handleValidation,
+        .isString()
+        .withMessage("Password is required")
+        .bail()
+        .isLength({ min: 6, max: 128 })
+        .withMessage("Password must be between 6 and 128 characters long"),
+    validateRequest,
 ];
